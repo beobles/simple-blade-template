@@ -261,7 +261,7 @@ class Compiler implements CompilerInterface
                 $templateFile,
                 0,
                 '<blade:...>',
-                'Use declarative components such as <If>, <ForEach>, <Include> and { ... }'
+                'Use declarative components such as <If>, <ForEach>, <Include> and expressions in component attributes ({...}) or output ({{ ... }})'
             );
         }
 

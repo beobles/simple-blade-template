@@ -240,7 +240,7 @@ class Parser
                     $this->templateFile,
                     $line,
                     '@php',
-                    'Use declarative syntax: <Php expression={...} />'
+                    'Use declarative syntax with inline statement: <Php expression={...} />'
                 );
 
             case 'endphp':
@@ -249,7 +249,7 @@ class Parser
                     $this->templateFile,
                     $line,
                     '@endphp',
-                    'Use declarative syntax: <Php expression={...} />'
+                    'Use declarative syntax with inline statement: <Php expression={...} />'
                 );
 
             case 'include':
