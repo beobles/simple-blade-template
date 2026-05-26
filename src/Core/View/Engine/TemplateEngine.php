@@ -23,7 +23,7 @@ class TemplateEngine implements EngineInterface
     protected const RESERVED_SCOPE_KEYS = ['__blade', '__templateData', '_engineContext'];
 
     protected const DEFAULT_CACHE_DIR_PREFIX = 'simple-blade-cache-';
-    public const DEFAULT_TEMPLATE_EXTENSIONS = ['blade.php', 'php', 'tpl', 'html', 'htm'];
+    public const DEFAULT_TEMPLATE_EXTENSIONS = ['blade.php', 'php', 'tpl', 'html', 'htm', 'jsx', 'tsx'];
 
     /**
      * Compilador responsável por transformar template em PHP.

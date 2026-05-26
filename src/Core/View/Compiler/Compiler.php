@@ -3,6 +3,7 @@
 namespace Core\View\Compiler;
 
 use Core\View\Contract\CompilerInterface;
+use Core\View\Compiler\Syntax\ReactLikeSyntaxTransformer;
 use Core\View\Exception\CompilationException;
 use Core\View\Exception\SyntaxException;
 use Core\View\Security\SecurityManager;
@@ -13,6 +14,7 @@ use Core\View\Security\SecurityManager;
 class Compiler implements CompilerInterface
 {
     protected SecurityManager $security;
+    protected ReactLikeSyntaxTransformer $reactSyntaxTransformer;
     protected array $customDirectives = [];
     protected array $internalCallbacks = [];
     protected const HTML_BLOCK_PREFIX = 'blade:';
@@ -50,6 +52,7 @@ class Compiler implements CompilerInterface
     public function __construct(SecurityManager $security = null)
     {
         $this->security = $security ?? new SecurityManager();
+        $this->reactSyntaxTransformer = new ReactLikeSyntaxTransformer();
     }
 
     /**
@@ -58,6 +61,7 @@ class Compiler implements CompilerInterface
     public function compile(string $content, string $templateFile = ''): string
     {
         try {
+            $content = $this->reactSyntaxTransformer->transform($content, $templateFile);
             $content = $this->preprocessHtmlBlocks($content, $templateFile);
 
             // Tokenização
@@ -88,6 +92,7 @@ class Compiler implements CompilerInterface
     public function validate(string $content): bool
     {
         try {
+            $content = $this->reactSyntaxTransformer->transform($content, '');
             $content = $this->preprocessHtmlBlocks($content, '');
             $lexer = new Lexer($content);
             $tokens = $lexer->tokenize();

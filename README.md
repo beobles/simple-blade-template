@@ -1,4 +1,4 @@
-# Simple Blade Template Engine
+# Simple View Template Engine (React-like Syntax)
 
 Motor de templates em PHP, sem Composer e sem dependências externas.
 
@@ -19,7 +19,7 @@ Sem objetos extras de configuração.
 
 ## O que este sistema entrega
 
-- Sintaxe estilo Blade com lexer + parser + compiler próprios.
+- Sintaxe estilo React/Next-like com transformação segura para pipeline interno.
 - Renderização segura com resolução restrita de paths.
 - Cache de templates compilados com permissões restritas.
 - Controle de includes com proteção contra ciclo e profundidade máxima.
@@ -60,7 +60,7 @@ $view = new View([
     'debug' => true,
     'context' => true,                          // alias de expose_render_context
     'max_include_depth' => 30,
-    'extensions' => ['blade.php', 'php', 'tpl', 'html', 'htm'], // alias de template_extensions
+    'extensions' => ['blade.php', 'php', 'tpl', 'html', 'htm', 'jsx', 'tsx'], // alias de template_extensions
 ]);
 ```
 
@@ -74,7 +74,7 @@ $view = new View([
 | `debug` | `bool` | `false` | Ativa modo debug da engine |
 | `context` / `expose_render_context` | `bool` | `false` | Injeta `_engineContext` no template |
 | `max_include_depth` | `int` | `20` | Limite de includes aninhados |
-| `extensions` / `template_extensions` | `array<int,string>` | `['blade.php','php','tpl','html','htm']` | Extensões buscadas quando não há extensão explícita |
+| `extensions` / `template_extensions` | `array<int,string>` | `['blade.php','php','tpl','html','htm','jsx','tsx']` | Extensões buscadas quando não há extensão explícita |
 
 ---
 
@@ -140,47 +140,59 @@ Exposição da engine interna para cenários realmente avançados.
 
 ---
 
-## Diretivas suportadas
+## Sintaxe principal (React/Next-like)
 
-## Nova sintaxe alternativa: blocos HTML (`<blade:...>`)
+A sintaxe recomendada agora é baseada em componentes declarativos:
 
-Além da sintaxe `@...`, agora você pode escrever templates com blocos HTML namespaced:
+- Blocos condicionais e loops em formato JSX-like (`<If>`, `<ForEach>`, etc.).
+- Expressões em texto usando `{ ... }` quando forem expressões PHP.
+- Componentes de saída explícita (`<Echo />`, `<Raw />`).
+- Compatível com a sintaxe legada (`@...`) e com `<blade:...>`.
 
-- Prefixo reservado: `blade:`
-- Tags de bloco com fechamento explícito (ex.: `<blade:if ...>...</blade:if>`)
-- Tags de controle pontual em modo self-closing (ex.: `<blade:else />`, `<blade:include ... />`)
-- A sintaxe antiga continua funcionando normalmente (retrocompatível)
-
-### Exemplos rápidos
+### Exemplo rápido
 
 ```html
-<blade:if condition="$user !== null">
-  <h1>{{ $user['name'] }}</h1>
-<blade:else />
+<If condition={$user !== null}>
+  <h1>{ $user['name'] }</h1>
+<Else />
   <h1>Visitante</h1>
-</blade:if>
+</If>
 
-<blade:foreach each="$items as $item">
-  <li>{{ $item['title'] }}</li>
-</blade:foreach>
+<ForEach each={$items as $item}>
+  <li>{ $item['title'] }</li>
+</ForEach>
 
-<blade:include expression="'partials.menu', ['current' => $current]" />
+<Include template={'partials.menu'} data={['current' => $current]} />
 ```
 
-### Mapeamento principal
+### Componentes suportados
 
-| Bloco HTML | Diretiva equivalente |
+| Componente | Equivalente interno |
 |---|---|
-| `<blade:if condition="...">` | `@if(...)` |
-| `<blade:elseif condition="..." />` | `@elseif(...)` |
-| `<blade:else />` | `@else` |
-| `</blade:if>` | `@endif` |
-| `<blade:foreach each="...">` | `@foreach(...)` |
-| `</blade:foreach>` | `@endforeach` |
-| `<blade:include expression="..." />` | `@include(...)` |
-| `<blade:includeWhen expression="..." />` | `@includeWhen(...)` |
-| `<blade:auth>` | `@auth` |
-| `</blade:auth>` | `@endauth` |
+| `<If condition={...}>` | `@if(...)` |
+| `<ElseIf condition={...} />` | `@elseif(...)` |
+| `<Else />` | `@else` |
+| `</If>` | `@endif` |
+| `<ForEach each={...}>` | `@foreach(...)` |
+| `</ForEach>` | `@endforeach` |
+| `<ForElse each={...}>` | `@forelse(...)` |
+| `<Empty />` | `@empty` |
+| `</ForElse>` | `@endforelse` |
+| `<Include template={...} data={...} />` | `@include(...)` |
+| `<IncludeWhen when={...} template={...} data={...} />` | `@includeWhen(...)` |
+| `<Auth>` / `</Auth>` | `@auth` / `@endauth` |
+| `<Guest>` / `</Guest>` | `@guest` / `@endguest` |
+| `<Can ability={...} subject={...}>` | `@can(...)` |
+| `<Cannot ability={...} subject={...}>` | `@cannot(...)` |
+| `<Echo expression={...} />` | `{{ ... }}` |
+| `<Raw expression={...} />` | `{!! ... !!}` |
+
+### Sintaxe legada ainda suportada
+
+Também continuam válidos:
+
+- Diretivas `@...`
+- Blocos namespaced `<blade:...>`
 
 ### Saída e comentário
 - `{{ ... }}` (escapado)
