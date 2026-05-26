@@ -15,7 +15,7 @@ use Core\View\Engine\TemplateEngine;
  * <code>
  * $view = new View([
  *     'paths' => [__DIR__ . '/views'],
- *     'extensions' => ['tpl', 'html', 'blade.php', 'php'],
+ *     'extensions' => ['blade.php', 'php', 'tpl', 'html', 'htm', 'jsx', 'tsx'],
  *     'debug' => true,
  *     'context' => true,
  * ]);
