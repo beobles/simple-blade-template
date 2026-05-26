@@ -69,8 +69,8 @@ class DeclarativeSyntaxTransformer
         'Raw' => 'raw',
     ];
     protected const DEPRECATED_COMPONENTS = [
-        'IncludeWhen' => 'Use <Include when={...} template={...} data={...} /> (ou with={...})',
-        'IncludeUnless' => 'Use <Include unless={...} template={...} data={...} /> (ou with={...})',
+        'IncludeWhen' => 'Use <Include when={...} template={...} data={...} /> (or with={...})',
+        'IncludeUnless' => 'Use <Include unless={...} template={...} data={...} /> (or with={...})',
     ];
 
     /**
