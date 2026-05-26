@@ -503,7 +503,7 @@ class Parser
             return '512';
         }
 
-        if (preg_match('/^[1-9][0-9]*$/', $depth) !== 1) {
+        if (preg_match('/^(0|[1-9][0-9]*)$/', $depth) !== 1) {
             throw new SyntaxException(
                 'Invalid @json depth value',
                 $this->templateFile,

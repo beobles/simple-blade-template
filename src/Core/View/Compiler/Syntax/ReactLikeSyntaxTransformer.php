@@ -583,6 +583,9 @@ class ReactLikeSyntaxTransformer
             if ($flags === null && $depth === null) {
                 return $value;
             }
+            if ($flags === null) {
+                return "{$value}, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES, {$depth}";
+            }
             if ($depth === null) {
                 return "{$value}, {$flags}";
             }

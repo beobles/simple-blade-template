@@ -265,7 +265,12 @@ class Compiler implements CompilerInterface
             );
         }
 
-        if (preg_match('/(?:(?<=^)|(?<=[\s>]))@(?!@)([a-zA-Z_][a-zA-Z0-9_]*)/m', $content) === 1) {
+        if (
+            preg_match(
+                '/(?:(?<=^)|(?<=[\s>]))@(?!@)(if|elseif|else|endif|unless|endunless|isset|endisset|empty|endempty|foreach|endforeach|forelse|endforelse|for|endfor|while|endwhile|switch|case|default|endswitch|break|continue|php|endphp|include|includeIf|includeWhen|includeUnless|json|csrf|auth|endauth|guest|endguest|can|endcan|cannot|endcannot)(?=\s|\(|$)/mi',
+                $content
+            ) === 1
+        ) {
             throw new SyntaxException(
                 'Legacy @directive syntax is no longer supported',
                 $templateFile,
