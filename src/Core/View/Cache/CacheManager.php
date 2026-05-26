@@ -23,6 +23,7 @@ class CacheManager implements CacheInterface
         if (!is_dir($this->cachePath)) {
             mkdir($this->cachePath, 0700, true);
         }
+        @chmod($this->cachePath, 0700);
     }
 
     /**
@@ -76,6 +77,7 @@ class CacheManager implements CacheInterface
             if (!is_dir($dir)) {
                 mkdir($dir, 0700, true);
             }
+            @chmod($dir, 0700);
 
             return file_put_contents($path, $content, LOCK_EX) !== false;
         } catch (\Exception $e) {

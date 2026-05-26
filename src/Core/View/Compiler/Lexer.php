@@ -164,6 +164,7 @@ class Lexer
         $match = [];
         if (!preg_match('/^([a-zA-Z_][a-zA-Z0-9_]*)/A', substr($this->content, $this->position), $match)) {
             $this->addToken(self::TOKEN_TEXT, '@', $start, $startLine);
+            $this->position++;
             return;
         }
 
