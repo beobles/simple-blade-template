@@ -326,8 +326,11 @@ class Parser
     {
         $parts = $this->splitArguments($args);
         $value = $this->requireExpression($parts[0] ?? '', $line, '@json');
-        $flags = trim($parts[1] ?? 'JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES');
-        $depth = trim($parts[2] ?? '512');
+        $flags = $this->normalizeJsonFlags(
+            trim($parts[1] ?? 'JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES'),
+            $line
+        );
+        $depth = $this->normalizeJsonDepth(trim($parts[2] ?? '512'), $line);
         return "echo json_encode({$value}, {$flags}, {$depth});\n";
     }
 
@@ -455,6 +458,62 @@ class Parser
         }
 
         return $arguments;
+    }
+
+    protected function normalizeJsonFlags(string $flags, int $line): string
+    {
+        if ($flags === '') {
+            return 'JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES';
+        }
+
+        if (preg_match('/^\d+$/', $flags) === 1) {
+            return $flags;
+        }
+
+        if (preg_match('/^[A-Z0-9_\s|()]+$/', $flags) !== 1) {
+            throw new SyntaxException(
+                'Invalid @json flags expression',
+                $this->templateFile,
+                $line,
+                $flags,
+                'Use integer flags or JSON_* constants combined with "|"'
+            );
+        }
+
+        preg_match_all('/[A-Z_][A-Z0-9_]*/', $flags, $constantMatches);
+        $constants = $constantMatches[0] ?? [];
+        foreach ($constants as $constant) {
+            if (!str_starts_with($constant, 'JSON_') || !defined($constant)) {
+                throw new SyntaxException(
+                    "Unsupported @json flag constant: {$constant}",
+                    $this->templateFile,
+                    $line,
+                    $flags,
+                    'Use only valid JSON_* flag constants'
+                );
+            }
+        }
+
+        return trim((string) preg_replace('/\s+/', ' ', $flags));
+    }
+
+    protected function normalizeJsonDepth(string $depth, int $line): string
+    {
+        if ($depth === '') {
+            return '512';
+        }
+
+        if (preg_match('/^[1-9][0-9]*$/', $depth) !== 1) {
+            throw new SyntaxException(
+                'Invalid @json depth value',
+                $this->templateFile,
+                $line,
+                $depth,
+                'Use a positive integer for depth'
+            );
+        }
+
+        return $depth;
     }
 
     protected function pushStructure(string $type, string $closing, int $line, array $meta = []): void
