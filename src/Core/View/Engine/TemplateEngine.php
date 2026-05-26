@@ -114,6 +114,9 @@ class TemplateEngine implements EngineInterface
             'cwd' => getcwd() ?: '',
             'view_paths' => $viewPaths,
         ]);
+        if ($cacheScope === false) {
+            $cacheScope = (string) (getcwd() ?: '') . '|' . implode('|', $viewPaths);
+        }
         $defaultCachePath = sys_get_temp_dir()
             . DIRECTORY_SEPARATOR
             . self::DEFAULT_CACHE_DIR_PREFIX
@@ -534,7 +537,7 @@ class TemplateEngine implements EngineInterface
             return false;
         }
 
-        return isset($_SESSION['user']) || (!empty($_SESSION['authenticated']) && $_SESSION['authenticated'] === true);
+        return isset($_SESSION['user']) || (($_SESSION['authenticated'] ?? false) === true);
     }
 
     protected function resolveCan($ability, $subject = null): bool
