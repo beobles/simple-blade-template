@@ -16,11 +16,13 @@ class Parser
     protected array $internalCallbacks = [];
     protected string $templateFile = '';
     protected int $uniqueCounter = 0;
+    protected string $htmlEscapeFlagsExpression = '';
 
     public function __construct(array $tokens = [], string $templateFile = '')
     {
         $this->tokens = $tokens;
         $this->templateFile = $templateFile;
+        $this->htmlEscapeFlagsExpression = (string) (ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0));
     }
 
     /**
@@ -457,7 +459,7 @@ class Parser
 
     protected function getHtmlEscapeFlagsExpression(): string
     {
-        return (string) (ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0));
+        return $this->htmlEscapeFlagsExpression;
     }
 
     protected function pushStructure(string $type, string $closing, int $line, array $meta = []): void

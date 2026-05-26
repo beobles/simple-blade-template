@@ -65,7 +65,7 @@ echo $engine->render('pages.home');     // procura pages/home.blade.php, .php, .
 echo $engine->render('email/welcome.tpl'); // extensão explícita também funciona
 
 // disponível no PHP quando debug + expose_render_context estão ativos:
-// $__engineContext
+// $_engineContext
 
 $lastContext = $engine->getLastRenderContext();
 ```

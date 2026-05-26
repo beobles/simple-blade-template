@@ -16,6 +16,13 @@ use Core\View\Security\SecurityManager;
 class TemplateEngine implements EngineInterface
 {
     /**
+     * Variáveis internas reservadas que não devem ser propagadas em includes.
+     *
+     * @var array<int, string>
+     */
+    protected const RESERVED_SCOPE_KEYS = ['__blade', '__templateData', '_engineContext'];
+
+    /**
      * Compilador responsável por transformar template em PHP.
      */
     protected Compiler $compiler;
@@ -403,7 +410,7 @@ class TemplateEngine implements EngineInterface
 
         $__templateData = $data;
         if ($this->debug && $this->exposeRenderContext) {
-            $__templateData['__engineContext'] = $this->lastRenderContext;
+            $__templateData['_engineContext'] = $this->lastRenderContext;
         }
         extract($__templateData, EXTR_SKIP);
 
@@ -480,7 +487,7 @@ class TemplateEngine implements EngineInterface
 
         $this->includeStack[] = $file;
         try {
-            unset($scope['__blade'], $scope['__templateData']);
+            $scope = $this->removeReservedScopeVariables($scope);
             $merged = array_merge($scope, $with);
             return $this->renderTemplateFile($file, $merged, $template);
         } finally {
@@ -646,5 +653,20 @@ class TemplateEngine implements EngineInterface
         }
 
         return $tmpPath;
+    }
+
+    /**
+     * Remover variáveis internas da engine para evitar vazamento entre escopos.
+     *
+     * @param array<string, mixed> $scope
+     * @return array<string, mixed>
+     */
+    protected function removeReservedScopeVariables(array $scope): array
+    {
+        foreach (self::RESERVED_SCOPE_KEYS as $key) {
+            unset($scope[$key]);
+        }
+
+        return $scope;
     }
 }

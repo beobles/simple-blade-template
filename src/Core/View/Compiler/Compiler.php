@@ -32,13 +32,7 @@ class Compiler implements CompilerInterface
             $tokens = $lexer->tokenize();
 
             // Parsing
-            $parser = new Parser($tokens, $templateFile);
-            foreach ($this->customDirectives as $name => $callback) {
-                $parser->addDirective($name, $callback);
-            }
-            foreach ($this->internalCallbacks as $name => $callback) {
-                $parser->setInternalCallback($name, $callback);
-            }
+            $parser = $this->createConfiguredParser($tokens, $templateFile);
             
             return $parser->parse();
         } catch (SyntaxException $e) {
@@ -63,12 +57,30 @@ class Compiler implements CompilerInterface
         try {
             $lexer = new Lexer($content);
             $tokens = $lexer->tokenize();
-            $parser = new Parser($tokens, '');
+            $parser = $this->createConfiguredParser($tokens, '');
             $parser->parse();
             return true;
         } catch (\Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * Criar parser com todas as diretivas/callbacks registradas no compilador.
+     */
+    protected function createConfiguredParser(array $tokens, string $templateFile): Parser
+    {
+        $parser = new Parser($tokens, $templateFile);
+
+        foreach ($this->customDirectives as $name => $callback) {
+            $parser->addDirective($name, $callback);
+        }
+
+        foreach ($this->internalCallbacks as $name => $callback) {
+            $parser->setInternalCallback($name, $callback);
+        }
+
+        return $parser;
     }
 
     /**
