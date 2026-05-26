@@ -15,7 +15,7 @@ class Parser
     protected array $customDirectives = [];
     protected array $internalCallbacks = [];
     protected string $templateFile = '';
-    protected int $forelseMarkerCounter = 0;
+    protected int $forelseEmptyMarkerCounter = 0;
     protected int $htmlEscapeFlags = 0;
 
     public function __construct(array $tokens = [], string $templateFile = '')
@@ -169,7 +169,7 @@ class Parser
                 return "}\n";
 
             case 'forelse':
-                $marker = '$templateForelseEmpty' . (++$this->forelseMarkerCounter);
+                $marker = '$templateForelseEmpty' . (++$this->forelseEmptyMarkerCounter);
                 $this->pushStructure('forelse', 'endforelse', $line, [
                     'marker' => $marker,
                     'empty_used' => false,
