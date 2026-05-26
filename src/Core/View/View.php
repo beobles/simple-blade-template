@@ -179,20 +179,13 @@ class View
      */
     protected function prepareOptions(array $options): array
     {
-        $normalized = array_merge([
-            'view_paths' => [],
-            'cache_enabled' => true,
-            'debug' => false,
-            'expose_render_context' => false,
-            'max_include_depth' => 20,
-            'template_extensions' => TemplateEngine::DEFAULT_TEMPLATE_EXTENSIONS,
-        ], $options);
+        $normalized = $options;
 
-        if (isset($normalized['paths']) && !isset($normalized['view_paths'])) {
+        if (array_key_exists('paths', $normalized) && !array_key_exists('view_paths', $normalized)) {
             $normalized['view_paths'] = (array) $normalized['paths'];
         }
 
-        if (isset($normalized['extensions']) && !isset($normalized['template_extensions'])) {
+        if (array_key_exists('extensions', $normalized) && !array_key_exists('template_extensions', $normalized)) {
             $normalized['template_extensions'] = (array) $normalized['extensions'];
         }
 
@@ -203,6 +196,15 @@ class View
         if (array_key_exists('context', $normalized) && !array_key_exists('expose_render_context', $normalized)) {
             $normalized['expose_render_context'] = (bool) $normalized['context'];
         }
+
+        $normalized = array_merge([
+            'view_paths' => [],
+            'cache_enabled' => true,
+            'debug' => false,
+            'expose_render_context' => false,
+            'max_include_depth' => 20,
+            'template_extensions' => TemplateEngine::DEFAULT_TEMPLATE_EXTENSIONS,
+        ], $normalized);
 
         $normalized['view_paths'] = (array) ($normalized['view_paths'] ?? []);
         $normalized['template_extensions'] = (array) ($normalized['template_extensions'] ?? []);
