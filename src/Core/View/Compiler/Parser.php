@@ -16,13 +16,13 @@ class Parser
     protected array $internalCallbacks = [];
     protected string $templateFile = '';
     protected int $uniqueCounter = 0;
-    protected string $htmlEscapeFlagsExpression = '';
+    protected int $htmlEscapeFlags = 0;
 
     public function __construct(array $tokens = [], string $templateFile = '')
     {
         $this->tokens = $tokens;
         $this->templateFile = $templateFile;
-        $this->htmlEscapeFlagsExpression = (string) (ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0));
+        $this->htmlEscapeFlags = ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0);
     }
 
     /**
@@ -83,7 +83,7 @@ class Parser
     {
         $line = $token['line'] ?? 0;
         $expression = $this->requireExpression($token['value'] ?? '', $line, 'variable');
-        return "echo htmlspecialchars((string)($expression), {$this->htmlEscapeFlagsExpression}, 'UTF-8');\n";
+        return "echo htmlspecialchars((string)($expression), " . $this->htmlEscapeFlags . ", 'UTF-8');\n";
     }
 
     /**
@@ -169,7 +169,7 @@ class Parser
                 return "}\n";
 
             case 'forelse':
-                $marker = '$bladeForelseEmpty' . (++$this->uniqueCounter);
+                $marker = '$templateForelseEmpty' . (++$this->uniqueCounter);
                 $this->pushStructure('forelse', 'endforelse', $line, [
                     'marker' => $marker,
                     'empty_used' => false,

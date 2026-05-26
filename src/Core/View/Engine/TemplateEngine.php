@@ -657,7 +657,7 @@ class TemplateEngine implements EngineInterface
     protected function writeEphemeralCompiledFile(string $compiledCode): string
     {
         $tmpDir = sys_get_temp_dir();
-        $tmpPath = tempnam($tmpDir, 'blade_compiled_');
+        $tmpPath = tempnam($tmpDir, 'template_compiled_');
         if ($tmpPath === false || file_put_contents($tmpPath, $compiledCode, LOCK_EX) === false) {
             throw new RuntimeException("Failed to create temporary compiled template file in {$tmpDir}");
         }
