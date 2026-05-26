@@ -9,7 +9,7 @@ use Core\View\Exception\SyntaxException;
  */
 class ReactLikeSyntaxTransformer
 {
-    protected const PREFIX = 'blade:';
+    protected const PREFIX = 'view:';
 
     /**
      * @var array<string, string>

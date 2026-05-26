@@ -149,7 +149,7 @@ A sintaxe recomendada agora é baseada em componentes declarativos:
 - Blocos condicionais e loops em formato JSX-like (`<If>`, `<ForEach>`, etc.).
 - Expressões em texto usando `{ ... }` quando forem expressões PHP.
 - Componentes de saída explícita (`<Echo />`, `<Raw />`).
-- Compatível com a sintaxe legada (`@...`) e com `<blade:...>`.
+- Sem suporte à sintaxe legada `@...` e `<blade:...>`.
 
 ### Exemplo rápido
 
@@ -169,68 +169,31 @@ A sintaxe recomendada agora é baseada em componentes declarativos:
 
 ### Componentes suportados
 
-| Componente | Equivalente interno |
+| Componente | Papel |
 |---|---|
-| `<If condition={...}>` | `@if(...)` |
-| `<ElseIf condition={...} />` | `@elseif(...)` |
-| `<Else />` | `@else` |
-| `</If>` | `@endif` |
-| `<ForEach each={...}>` | `@foreach(...)` |
-| `</ForEach>` | `@endforeach` |
-| `<ForElse each={...}>` | `@forelse(...)` |
-| `<Empty />` | `@empty` |
-| `</ForElse>` | `@endforelse` |
-| `<Include template={...} data={...} />` | `@include(...)` |
-| `<IncludeWhen when={...} template={...} data={...} />` | `@includeWhen(...)` |
-| `<Auth>` / `</Auth>` | `@auth` / `@endauth` |
-| `<Guest>` / `</Guest>` | `@guest` / `@endguest` |
-| `<Can ability={...} subject={...}>` | `@can(...)` |
-| `<Cannot ability={...} subject={...}>` | `@cannot(...)` |
-| `<Echo expression={...} />` | `{{ ... }}` |
-| `<Raw expression={...} />` | `{!! ... !!}` |
-
-### Sintaxe legada ainda suportada
-
-Também continuam válidos:
-
-- Diretivas `@...`
-- Blocos namespaced `<blade:...>`
+| `<If condition={...}>` | Condicional |
+| `<ElseIf condition={...} />` | Condicional complementar |
+| `<Else />` | Fallback condicional |
+| `</If>` | Fechamento do bloco condicional |
+| `<ForEach each={...}>` | Loop foreach |
+| `</ForEach>` | Fechamento do loop |
+| `<ForElse each={...}>` | Loop com fallback de vazio |
+| `<Empty />` | Bloco de vazio no `ForElse` |
+| `</ForElse>` | Fechamento do `ForElse` |
+| `<Include template={...} data={...} />` | Include de template |
+| `<IncludeWhen when={...} template={...} data={...} />` | Include condicional |
+| `<Auth>` / `</Auth>` | Bloco para usuário autenticado |
+| `<Guest>` / `</Guest>` | Bloco para visitante |
+| `<Can ability={...} subject={...}>` | Bloco de autorização positiva |
+| `<Cannot ability={...} subject={...}>` | Bloco de autorização negativa |
+| `<Echo expression={...} />` | Saída escapada |
+| `<Raw expression={...} />` | Saída raw |
 
 ### Saída e comentário
 - `{{ ... }}` (escapado)
 - `{!! ... !!}` (raw)
 - `{{-- ... --}}` (comentário)
-- `@@` (escape de `@`)
-
-### Condicionais
-- `@if`, `@elseif`, `@else`, `@endif`
-- `@unless`, `@endunless`
-- `@isset`, `@endisset`
-- `@empty`, `@endempty`
-
-### Loops
-- `@foreach`, `@endforeach`
-- `@forelse`, `@empty`, `@endforelse`
-- `@for`, `@endfor`
-- `@while`, `@endwhile`
-- `@break`, `@continue`
-
-### Switch
-- `@switch`, `@case`, `@default`, `@endswitch`
-
-### Includes
-- `@include`
-- `@includeIf`
-- `@includeWhen`
-- `@includeUnless`
-
-### Helpers
-- `@json`
-- `@csrf`
-- `@auth`, `@endauth`
-- `@guest`, `@endguest`
-- `@can`, `@endcan`
-- `@cannot`, `@endcannot`
+- Não use `@...` (modo removido).
 
 ---
 
@@ -246,8 +209,7 @@ Também continuam válidos:
 
 ## Limitações intencionais
 
-- `@php ... @endphp` em bloco não é suportado.
-- Use apenas `@php(expressão)`.
+- Sintaxe legada `@directive` e `<blade:...>` foi removida.
 
 ---
 

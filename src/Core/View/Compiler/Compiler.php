@@ -9,7 +9,7 @@ use Core\View\Exception\SyntaxException;
 use Core\View\Security\SecurityManager;
 
 /**
- * Compilador de templates Blade
+ * Compilador de templates da sintaxe View React-like.
  */
 class Compiler implements CompilerInterface
 {
@@ -17,7 +17,7 @@ class Compiler implements CompilerInterface
     protected ReactLikeSyntaxTransformer $reactSyntaxTransformer;
     protected array $customDirectives = [];
     protected array $internalCallbacks = [];
-    protected const HTML_BLOCK_PREFIX = 'blade:';
+    protected const HTML_BLOCK_PREFIX = 'view:';
     protected const HTML_BLOCK_CLOSINGS = [
         'if' => 'endif',
         'unless' => 'endunless',
@@ -61,6 +61,7 @@ class Compiler implements CompilerInterface
     public function compile(string $content, string $templateFile = ''): string
     {
         try {
+            $this->assertNoLegacyBladeSyntax($content, $templateFile);
             $content = $this->reactSyntaxTransformer->transform($content, $templateFile);
             $content = $this->preprocessHtmlBlocks($content, $templateFile);
 
@@ -92,6 +93,7 @@ class Compiler implements CompilerInterface
     public function validate(string $content): bool
     {
         try {
+            $this->assertNoLegacyBladeSyntax($content, '');
             $content = $this->reactSyntaxTransformer->transform($content, '');
             $content = $this->preprocessHtmlBlocks($content, '');
             $lexer = new Lexer($content);
@@ -249,5 +251,28 @@ class Compiler implements CompilerInterface
         }
 
         return $pick($attributes, ['expression', 'args']);
+    }
+
+    protected function assertNoLegacyBladeSyntax(string $content, string $templateFile): void
+    {
+        if (preg_match('/<\s*\/?\s*blade:/i', $content) === 1) {
+            throw new SyntaxException(
+                'Legacy <blade:...> syntax is no longer supported',
+                $templateFile,
+                0,
+                '<blade:...>',
+                'Use React-like components such as <If>, <ForEach>, <Include> and { ... }'
+            );
+        }
+
+        if (preg_match('/(^|[^a-zA-Z0-9_])@([a-zA-Z_][a-zA-Z0-9_]*)/', $content) === 1) {
+            throw new SyntaxException(
+                'Legacy @directive syntax is no longer supported',
+                $templateFile,
+                0,
+                '@directive',
+                'Use React-like components such as <If>, <ElseIf />, <ForEach>, <Echo /> and <Raw />'
+            );
+        }
     }
 }
