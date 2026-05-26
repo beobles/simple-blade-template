@@ -2,7 +2,6 @@
 
 namespace Core\View;
 
-use Core\View\Engine\EngineConfig;
 use Core\View\Engine\TemplateEngine;
 
 /**
@@ -51,8 +50,15 @@ class View
      */
     public function __construct(array $options = [])
     {
-        $config = EngineConfig::fromArray($this->normalizeOptions($options));
-        $this->engine = TemplateEngine::fromConfig($config);
+        $normalized = $this->prepareOptions($options);
+        $this->engine = new TemplateEngine(
+            (array) ($normalized['view_paths'] ?? []),
+            null,
+            null,
+            null,
+            isset($normalized['cache_path']) ? (string) $normalized['cache_path'] : null,
+            $normalized
+        );
     }
 
     /**
@@ -135,7 +141,7 @@ class View
      */
     public function configure(array $options): self
     {
-        $normalized = $this->normalizeOptions($options);
+        $normalized = $this->prepareOptions($options);
 
         if (isset($normalized['view_paths']) && is_array($normalized['view_paths'])) {
             foreach ($normalized['view_paths'] as $path) {
@@ -166,14 +172,21 @@ class View
     }
 
     /**
-     * Normalizar aliases de opções para chaves oficiais da EngineConfig/TemplateEngine.
+     * Normalizar aliases e aplicar defaults para configuração direta no View.
      *
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */
-    protected function normalizeOptions(array $options): array
+    protected function prepareOptions(array $options): array
     {
-        $normalized = $options;
+        $normalized = array_merge([
+            'view_paths' => [],
+            'cache_enabled' => true,
+            'debug' => false,
+            'expose_render_context' => false,
+            'max_include_depth' => 20,
+            'template_extensions' => TemplateEngine::DEFAULT_TEMPLATE_EXTENSIONS,
+        ], $options);
 
         if (isset($normalized['paths']) && !isset($normalized['view_paths'])) {
             $normalized['view_paths'] = (array) $normalized['paths'];
@@ -189,6 +202,16 @@ class View
 
         if (array_key_exists('context', $normalized) && !array_key_exists('expose_render_context', $normalized)) {
             $normalized['expose_render_context'] = (bool) $normalized['context'];
+        }
+
+        $normalized['view_paths'] = (array) ($normalized['view_paths'] ?? []);
+        $normalized['template_extensions'] = (array) ($normalized['template_extensions'] ?? []);
+        $normalized['cache_enabled'] = (bool) ($normalized['cache_enabled'] ?? true);
+        $normalized['debug'] = (bool) ($normalized['debug'] ?? false);
+        $normalized['expose_render_context'] = (bool) ($normalized['expose_render_context'] ?? false);
+        $normalized['max_include_depth'] = (int) ($normalized['max_include_depth'] ?? 20);
+        if (array_key_exists('cache_path', $normalized) && $normalized['cache_path'] !== null) {
+            $normalized['cache_path'] = (string) $normalized['cache_path'];
         }
 
         return $normalized;

@@ -1,31 +1,34 @@
 # Simple Blade Template Engine
 
-Motor de template em PHP, sem Composer e sem dependências externas.
+Motor de templates em PHP, sem Composer e sem dependências externas.
 
-## Recursos
+## Filosofia da API
 
-- Lexer robusto com tratamento de:
-  - variáveis `{{ }}` e `{!! !!}`
-  - comentários `{{-- --}}`
-  - escapes `@@`
-  - diretivas com argumentos complexos (parênteses e aspas balanceados)
-- Parser com validação estrutural e mensagens de erro de sintaxe detalhadas
-- Diretivas principais:
-  - Condição: `@if`, `@elseif`, `@else`, `@endif`, `@unless`, `@endunless`
-  - Estado: `@isset`, `@endisset`, `@empty`, `@endempty`
-  - Loops: `@foreach`, `@endforeach`, `@forelse`, `@empty`, `@endforelse`, `@for`, `@endfor`, `@while`, `@endwhile`
-  - Switch: `@switch`, `@case`, `@default`, `@endswitch`, `@break`, `@continue`
-  - Include: `@include`, `@includeIf`, `@includeWhen`, `@includeUnless`
-  - Helpers: `@json`, `@csrf`, `@auth`, `@endauth`, `@guest`, `@endguest`, `@can`, `@endcan`, `@cannot`, `@endcannot`
-- Engine de renderização com:
-  - resolução segura de templates por paths permitidos
-  - cache de templates compilados
-  - proteção contra include circular e profundidade excessiva
-  - suporte a callbacks de autenticação/autorização/CSRF
-  - suporte a múltiplas extensões configuráveis (`.blade.php`, `.php`, `.tpl`, `.html`, etc.)
-  - contexto de renderização para troubleshooting em desenvolvimento
+Toda configuração é feita diretamente no `View()`.
 
-## Uso básico (simples e direto)
+```php
+use Core\View\View;
+
+$view = new View([...opções...]);
+echo $view->render('pages.home', [...dados...]);
+```
+
+Sem objetos extras de configuração.
+
+---
+
+## O que este sistema entrega
+
+- Sintaxe estilo Blade com lexer + parser + compiler próprios.
+- Renderização segura com resolução restrita de paths.
+- Cache de templates compilados com permissões restritas.
+- Controle de includes com proteção contra ciclo e profundidade máxima.
+- Callbacks de autenticação, autorização e CSRF.
+- API curta para uso diário e limpa para manutenção.
+
+---
+
+## Instanciação rápida
 
 ```php
 <?php
@@ -34,55 +37,174 @@ use Core\View\View;
 
 $view = new View([
     'paths' => [__DIR__ . '/views'],
-    'extensions' => ['blade.php', 'php', 'tpl', 'html', 'htm'],
-    'debug' => true,
-    'context' => true, // expõe $_engineContext no template em dev
 ]);
 
 echo $view->render('pages.home', [
     'title' => 'Olá',
-    'items' => [1, 2, 3],
 ]);
-
-$view->share('appName', 'Simple Blade');
-$lastContext = $view->context();
 ```
 
-## Configuração avançada (controle total)
+---
+
+## Configuração completa no `new View([...])`
 
 ```php
 <?php
 
-use Core\View\Engine\EngineConfig;
-use Core\View\Engine\TemplateEngine;
+use Core\View\View;
 
-$config = EngineConfig::fromArray([
-    'view_paths' => [__DIR__ . '/views'],
-    'template_extensions' => ['blade.php', 'php', 'tpl', 'html'],
+$view = new View([
+    'paths' => [__DIR__ . '/views'],            // alias de view_paths
+    'cache_path' => __DIR__ . '/storage/cache', // opcional
+    'cache' => true,                            // alias de cache_enabled
     'debug' => true,
-    'expose_render_context' => true,
+    'context' => true,                          // alias de expose_render_context
     'max_include_depth' => 30,
-    'cache_enabled' => true,
+    'extensions' => ['blade.php', 'php', 'tpl', 'html', 'htm'], // alias de template_extensions
 ]);
-
-$engine = TemplateEngine::fromConfig($config);
-
-echo $engine->render('pages.home');     // procura pages/home.blade.php, .php, .tpl, .html, .htm...
-echo $engine->render('email/welcome.tpl'); // extensão explícita também funciona
-
-// disponível no template como variável local quando debug + expose_render_context estão ativos:
-// $_engineContext
-
-$lastContext = $engine->getLastRenderContext();
 ```
 
-## Observações
+### Opções disponíveis
 
-- O projeto não utiliza Composer.
-- O cache compilado usa permissões restritas (`0700`) por padrão para reduzir exposição em ambientes compartilhados.
-- O parser não suporta bloco `@php ... @endphp`; use apenas `@php(expressão)`.
-- Para validação de sintaxe:
+| Opção | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `paths` / `view_paths` | `array<int,string>` | `[]` | Lista de diretórios permitidos para templates |
+| `cache_path` | `string|null` | `null` | Caminho do cache compilado |
+| `cache` / `cache_enabled` | `bool` | `true` | Ativa/desativa cache de compilação |
+| `debug` | `bool` | `false` | Ativa modo debug da engine |
+| `context` / `expose_render_context` | `bool` | `false` | Injeta `_engineContext` no template |
+| `max_include_depth` | `int` | `20` | Limite de includes aninhados |
+| `extensions` / `template_extensions` | `array<int,string>` | `['blade.php','php','tpl','html','htm']` | Extensões buscadas quando não há extensão explícita |
+
+---
+
+## Métodos principais do `View`
+
+### `render(string $template, array $data = []): string`
+
+Renderiza o template solicitado.
+
+```php
+echo $view->render('pages.home', ['title' => 'Dashboard']);
+echo $view->render('emails/welcome.tpl', ['name' => 'Ana']); // extensão explícita
+```
+
+### `assign(array|string $key, mixed $value = null): self`
+### `share(array|string $key, mixed $value = null): self`
+
+Define variáveis globais compartilhadas.
+
+```php
+$view->share('appName', 'Portal');
+$view->assign([
+    'company' => 'Acme',
+    'year' => 2026,
+]);
+```
+
+### `addPath(string $path): self`
+
+Adiciona novo diretório de views em runtime.
+
+### `configure(array $options): self`
+
+Reaplica opções no objeto já instanciado.
+
+```php
+$view->configure([
+    'debug' => true,
+    'context' => true,
+]);
+```
+
+### `auth(callable $resolver): self`
+### `can(callable $resolver): self`
+### `csrf(callable $resolver): self`
+
+Conecta integrações de autenticação/autorização/token.
+
+```php
+$view
+    ->auth(fn () => isset($_SESSION['user']))
+    ->can(fn (string $ability, $subject = null) => $ability === 'view-dashboard')
+    ->csrf(fn () => $_SESSION['_token'] ?? '');
+```
+
+### `context(): array`
+
+Retorna contexto da última renderização.
+
+### `engine(): TemplateEngine`
+
+Exposição da engine interna para cenários realmente avançados.
+
+---
+
+## Diretivas suportadas
+
+### Saída e comentário
+- `{{ ... }}` (escapado)
+- `{!! ... !!}` (raw)
+- `{{-- ... --}}` (comentário)
+- `@@` (escape de `@`)
+
+### Condicionais
+- `@if`, `@elseif`, `@else`, `@endif`
+- `@unless`, `@endunless`
+- `@isset`, `@endisset`
+- `@empty`, `@endempty`
+
+### Loops
+- `@foreach`, `@endforeach`
+- `@forelse`, `@empty`, `@endforelse`
+- `@for`, `@endfor`
+- `@while`, `@endwhile`
+- `@break`, `@continue`
+
+### Switch
+- `@switch`, `@case`, `@default`, `@endswitch`
+
+### Includes
+- `@include`
+- `@includeIf`
+- `@includeWhen`
+- `@includeUnless`
+
+### Helpers
+- `@json`
+- `@csrf`
+- `@auth`, `@endauth`
+- `@guest`, `@endguest`
+- `@can`, `@endcan`
+- `@cannot`, `@endcannot`
+
+---
+
+## Segurança e confiabilidade
+
+- Resolução de template limitada aos paths permitidos.
+- Bloqueio de dependência circular em includes.
+- Limite de profundidade de includes configurável.
+- Escape de saída por padrão em `{{ }}`.
+- Cache compilado com permissões `0700`.
+
+---
+
+## Limitações intencionais
+
+- `@php ... @endphp` em bloco não é suportado.
+- Use apenas `@php(expressão)`.
+
+---
+
+## Validação de sintaxe
 
 ```bash
 find src -name '*.php' -print0 | xargs -0 -n1 php -l
 ```
+
+---
+
+## Observação
+
+Este projeto não utiliza Composer.

@@ -23,6 +23,7 @@ class TemplateEngine implements EngineInterface
     protected const RESERVED_SCOPE_KEYS = ['__blade', '__templateData', '_engineContext'];
 
     protected const DEFAULT_CACHE_DIR_PREFIX = 'simple-blade-cache-';
+    public const DEFAULT_TEMPLATE_EXTENSIONS = ['blade.php', 'php', 'tpl', 'html', 'htm'];
 
     /**
      * Compilador responsável por transformar template em PHP.
@@ -81,7 +82,7 @@ class TemplateEngine implements EngineInterface
      *
      * @var array<int, string>
      */
-    protected array $templateExtensions = EngineConfig::DEFAULT_TEMPLATE_EXTENSIONS;
+    protected array $templateExtensions = self::DEFAULT_TEMPLATE_EXTENSIONS;
 
     /**
      * Habilita rastreamento de contexto de renderização para desenvolvimento.
@@ -130,33 +131,6 @@ class TemplateEngine implements EngineInterface
         }
 
         $this->configure($options);
-    }
-
-    /**
-     * Criar engine a partir de configuração centralizada.
-     */
-    public static function fromConfig(
-        EngineConfig $config,
-        ?Compiler $compiler = null,
-        ?CacheManager $cache = null,
-        ?SecurityManager $security = null
-    ): self {
-        $engine = new self(
-            $config->getViewPaths(),
-            $compiler,
-            $cache,
-            $security,
-            $config->getCachePath(),
-            [
-                'cache_enabled' => $config->isCacheEnabled(),
-                'debug' => $config->isDebug(),
-                'expose_render_context' => $config->shouldExposeRenderContext(),
-                'max_include_depth' => $config->getMaxIncludeDepth(),
-                'template_extensions' => $config->getTemplateExtensions(),
-            ]
-        );
-
-        return $engine;
     }
 
     /**
