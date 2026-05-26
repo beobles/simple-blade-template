@@ -240,7 +240,7 @@ class Parser
                     $this->templateFile,
                     $line,
                     '@php',
-                    'Use @php(expression) for one-line PHP statements'
+                    'Use declarative syntax: <Php expression={...} />'
                 );
 
             case 'endphp':
@@ -249,7 +249,7 @@ class Parser
                     $this->templateFile,
                     $line,
                     '@endphp',
-                    'Use @php(expression) instead of block mode'
+                    'Use declarative syntax: <Php expression={...} />'
                 );
 
             case 'include':
