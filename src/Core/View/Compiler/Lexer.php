@@ -203,7 +203,7 @@ class Lexer
         $startLine = $this->line;
 
         while ($this->position < $this->length) {
-            if ($this->match('{{--', '{!!', '{{', '@@') || $this->content[$this->position] === '@') {
+            if ($this->match('{{--', '{!!', '{{') || $this->content[$this->position] === '@') {
                 break;
             }
             if ($this->content[$this->position] === "\n") {
@@ -309,13 +309,12 @@ class Lexer
 
         $token = [
             'type' => $type,
-            'value' => $value,
             'position' => $position,
             'line' => $line,
         ];
 
-        if ($type === self::TOKEN_DIRECTIVE) {
-            unset($token['value']);
+        if ($type !== self::TOKEN_DIRECTIVE) {
+            $token['value'] = $value;
         }
 
         $this->tokens[] = $token;
