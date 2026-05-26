@@ -14,6 +14,7 @@ class Compiler implements CompilerInterface
 {
     protected SecurityManager $security;
     protected array $customDirectives = [];
+    protected array $internalCallbacks = [];
 
     public function __construct(SecurityManager $security = null)
     {
@@ -34,6 +35,9 @@ class Compiler implements CompilerInterface
             $parser = new Parser($tokens, $templateFile);
             foreach ($this->customDirectives as $name => $callback) {
                 $parser->addDirective($name, $callback);
+            }
+            foreach ($this->internalCallbacks as $name => $callback) {
+                $parser->setInternalCallback($name, $callback);
             }
             
             return $parser->parse();
@@ -58,7 +62,9 @@ class Compiler implements CompilerInterface
     {
         try {
             $lexer = new Lexer($content);
-            $lexer->tokenize();
+            $tokens = $lexer->tokenize();
+            $parser = new Parser($tokens);
+            $parser->parse();
             return true;
         } catch (\Exception $e) {
             return false;
@@ -71,6 +77,15 @@ class Compiler implements CompilerInterface
     public function addDirective(string $name, callable $callback): self
     {
         $this->customDirectives[$name] = $callback;
+        return $this;
+    }
+
+    /**
+     * Registrar callback interno da engine
+     */
+    public function setInternalCallback(string $name, callable $callback): self
+    {
+        $this->internalCallbacks[$name] = $callback;
         return $this;
     }
 
