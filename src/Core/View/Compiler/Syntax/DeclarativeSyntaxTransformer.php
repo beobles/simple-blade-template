@@ -112,127 +112,222 @@ class DeclarativeSyntaxTransformer
     }
     protected function transformComponentTags(string $content, string $templateFile): string
     {
-        $pattern = '/<\s*(\/?)\s*([A-Z][A-Za-z0-9]*)\b([^>]*)>/';
-        $searchOffset = 0;
+        $result = '';
+        $cursor = 0;
+        $length = strlen($content);
 
-        return (string) preg_replace_callback(
-            $pattern,
-            function (array $match) use ($content, $templateFile, &$searchOffset): string {
-                $fullMatch = $match[0] ?? '';
-                $isClosingTag = ($match[1] ?? '') === '/';
-                $component = $match[2] ?? '';
-                $rawAttributes = $match[3] ?? '';
+        while ($cursor < $length) {
+            $start = strpos($content, '<', $cursor);
+            if ($start === false) {
+                $result .= substr($content, $cursor);
+                break;
+            }
 
-                $offset = strpos($content, $fullMatch, $searchOffset);
-                if ($offset !== false) {
-                    $searchOffset = $offset + strlen($fullMatch);
-                }
-                $line = $offset === false ? 1 : (substr_count(substr($content, 0, $offset), "\n") + 1);
+            $result .= substr($content, $cursor, $start - $cursor);
+            if (!preg_match('/\G<\s*(\/?)\s*([A-Z][A-Za-z0-9]*)\b/A', $content, $match, 0, $start)) {
+                $result .= '<';
+                $cursor = $start + 1;
+                continue;
+            }
 
-                if (isset(self::DEPRECATED_COMPONENTS[$component])) {
-                    throw new SyntaxException(
-                        "Component <{$component}> is no longer supported",
-                        $templateFile,
-                        $line,
-                        $fullMatch,
-                        self::DEPRECATED_COMPONENTS[$component]
-                    );
-                }
+            $tagHeadLength = strlen($match[0] ?? '');
+            $tagEnd = $this->findTagEnd($content, $start + $tagHeadLength);
+            if ($tagEnd === null) {
+                $result .= substr($content, $start);
+                break;
+            }
 
-                if (isset(self::SPECIAL_OUTPUT_COMPONENTS[$component])) {
-                    if ($isClosingTag) {
-                        throw new SyntaxException(
-                            "Closing tag </{$component}> is not supported",
-                            $templateFile,
-                            $line,
-                            $fullMatch,
-                            "Use <{$component} expression={...} />"
-                        );
-                    }
+            $fullMatch = substr($content, $start, ($tagEnd - $start) + 1);
+            $isClosingTag = ($match[1] ?? '') === '/';
+            $component = $match[2] ?? '';
+            $rawAttributes = substr($content, $start + $tagHeadLength, $tagEnd - ($start + $tagHeadLength));
+            $line = substr_count(substr($content, 0, $start), "\n") + 1;
 
-                    $attributesMeta = $this->parseAttributes($rawAttributes, $component, $templateFile, $line);
-                    $this->assertAllowedAndExplicitExpressionAttributes(
-                        $component,
-                        $attributesMeta,
-                        $templateFile,
-                        $line
-                    );
-                    $attributes = $this->flattenAttributeValues($attributesMeta);
-                    $expression = $this->pickFirstAttribute($attributes, ['expression', 'value', 'of']);
-                    if ($expression === null || trim($expression) === '') {
-                        throw new SyntaxException(
-                            "Missing expression for <{$component}>",
-                            $templateFile,
-                            $line,
-                            $fullMatch,
-                            "Use <{$component} expression={\$value} />"
-                        );
-                    }
+            $result .= $this->transformComponentTagMatch(
+                $fullMatch,
+                $isClosingTag,
+                $component,
+                $rawAttributes,
+                $templateFile,
+                $line
+            );
 
-                    if (self::SPECIAL_OUTPUT_COMPONENTS[$component] === 'raw') {
-                        return '{!! ' . trim($expression) . ' !!}';
-                    }
-                    return '{{ ' . trim($expression) . ' }}';
-                }
+            $cursor = $tagEnd + 1;
+        }
 
-                if (!isset(self::COMPONENT_TO_DIRECTIVE[$component])) {
-                    return $fullMatch;
-                }
-
-                $directive = self::COMPONENT_TO_DIRECTIVE[$component];
-                if ($isClosingTag) {
-                    return '</' . self::PREFIX . $directive . '>';
-                }
-
-                $attributesMeta = $this->parseAttributes($rawAttributes, $component, $templateFile, $line);
-                $this->assertAllowedAndExplicitExpressionAttributes(
-                    $component,
-                    $attributesMeta,
-                    $templateFile,
-                    $line
-                );
-                $attributes = $this->flattenAttributeValues($attributesMeta);
-                $directive = $this->resolveDirectiveFromAttributes($directive, $component, $attributes, $templateFile, $line, $fullMatch);
-                $isSelfClosing = str_ends_with(trim($rawAttributes), '/');
-                $expression = $this->extractDirectiveExpression($directive, $attributes);
-                $suffix = $isSelfClosing ? ' />' : '>';
-
-                if (in_array($directive, self::SELF_ONLY_DIRECTIVES, true) && !$isSelfClosing) {
-                    throw new SyntaxException(
-                        "Component <{$component}> must be self-closing",
-                        $templateFile,
-                        $line,
-                        $fullMatch,
-                        "Use <{$component} ... />"
-                    );
-                }
-
-                if ($expression !== null && trim($expression) !== '') {
-                    return '<' . self::PREFIX . $directive . ' expression=' . $this->quoteAttribute(trim($expression)) . $suffix;
-                }
-
-                return '<' . self::PREFIX . $directive . $suffix;
-            },
-            $content
-        );
+        return $result;
     }
 
     protected function transformTextExpressions(string $content): string
     {
-        $segments = preg_split('/(<[^>]+>)/', $content, -1, PREG_SPLIT_DELIM_CAPTURE);
-        if (!is_array($segments)) {
-            return $content;
+        $result = '';
+        $cursor = 0;
+        $length = strlen($content);
+
+        while ($cursor < $length) {
+            $start = strpos($content, '<', $cursor);
+            if ($start === false) {
+                $result .= $this->transformTextSegmentExpressions(substr($content, $cursor));
+                break;
+            }
+
+            $result .= $this->transformTextSegmentExpressions(substr($content, $cursor, $start - $cursor));
+            $tagEnd = $this->findTagEnd($content, $start + 1);
+            if ($tagEnd === null) {
+                $result .= $this->transformTextSegmentExpressions(substr($content, $start));
+                break;
+            }
+
+            $result .= substr($content, $start, ($tagEnd - $start) + 1);
+            $cursor = $tagEnd + 1;
         }
 
-        foreach ($segments as $index => $segment) {
-            if ($segment === '' || str_starts_with($segment, '<')) {
+        return $result;
+    }
+
+    protected function transformComponentTagMatch(
+        string $fullMatch,
+        bool $isClosingTag,
+        string $component,
+        string $rawAttributes,
+        string $templateFile,
+        int $line
+    ): string {
+        if (isset(self::DEPRECATED_COMPONENTS[$component])) {
+            throw new SyntaxException(
+                "Component <{$component}> is no longer supported",
+                $templateFile,
+                $line,
+                $fullMatch,
+                self::DEPRECATED_COMPONENTS[$component]
+            );
+        }
+
+        if (isset(self::SPECIAL_OUTPUT_COMPONENTS[$component])) {
+            if ($isClosingTag) {
+                throw new SyntaxException(
+                    "Closing tag </{$component}> is not supported",
+                    $templateFile,
+                    $line,
+                    $fullMatch,
+                    "Use <{$component} expression={...} />"
+                );
+            }
+
+            $attributesMeta = $this->parseAttributes($rawAttributes, $component, $templateFile, $line);
+            $this->assertAllowedAndExplicitExpressionAttributes(
+                $component,
+                $attributesMeta,
+                $templateFile,
+                $line
+            );
+            $attributes = $this->flattenAttributeValues($attributesMeta);
+            $expression = $this->pickFirstAttribute($attributes, ['expression', 'value', 'of']);
+            if ($expression === null || trim($expression) === '') {
+                throw new SyntaxException(
+                    "Missing expression for <{$component}>",
+                    $templateFile,
+                    $line,
+                    $fullMatch,
+                    "Use <{$component} expression={\$value} />"
+                );
+            }
+
+            if (self::SPECIAL_OUTPUT_COMPONENTS[$component] === 'raw') {
+                return '{!! ' . trim($expression) . ' !!}';
+            }
+            return '{{ ' . trim($expression) . ' }}';
+        }
+
+        if (!isset(self::COMPONENT_TO_DIRECTIVE[$component])) {
+            return $fullMatch;
+        }
+
+        $directive = self::COMPONENT_TO_DIRECTIVE[$component];
+        if ($isClosingTag) {
+            return '</' . self::PREFIX . $directive . '>';
+        }
+
+        $attributesMeta = $this->parseAttributes($rawAttributes, $component, $templateFile, $line);
+        $this->assertAllowedAndExplicitExpressionAttributes(
+            $component,
+            $attributesMeta,
+            $templateFile,
+            $line
+        );
+        $attributes = $this->flattenAttributeValues($attributesMeta);
+        $directive = $this->resolveDirectiveFromAttributes($directive, $component, $attributes, $templateFile, $line, $fullMatch);
+        $isSelfClosing = str_ends_with(trim($rawAttributes), '/');
+        $expression = $this->extractDirectiveExpression($directive, $attributes);
+        $suffix = $isSelfClosing ? ' />' : '>';
+
+        if (in_array($directive, self::SELF_ONLY_DIRECTIVES, true) && !$isSelfClosing) {
+            throw new SyntaxException(
+                "Component <{$component}> must be self-closing",
+                $templateFile,
+                $line,
+                $fullMatch,
+                "Use <{$component} ... />"
+            );
+        }
+
+        if ($expression !== null && trim($expression) !== '') {
+            return '<' . self::PREFIX . $directive . ' expression=' . $this->quoteAttribute(trim($expression)) . $suffix;
+        }
+
+        return '<' . self::PREFIX . $directive . $suffix;
+    }
+
+    protected function findTagEnd(string $content, int $index): ?int
+    {
+        $length = strlen($content);
+        $quote = null;
+        $escaped = false;
+        $braceDepth = 0;
+
+        while ($index < $length) {
+            $char = $content[$index];
+
+            if ($quote !== null) {
+                if ($escaped) {
+                    $escaped = false;
+                } elseif ($char === '\\') {
+                    $escaped = true;
+                } elseif ($char === $quote) {
+                    $quote = null;
+                }
+                $index++;
                 continue;
             }
 
-            $segments[$index] = $this->transformTextSegmentExpressions($segment);
+            if ($char === '"' || $char === "'") {
+                $quote = $char;
+                $index++;
+                continue;
+            }
+
+            if ($char === '{') {
+                $braceDepth++;
+                $index++;
+                continue;
+            }
+
+            if ($char === '}') {
+                if ($braceDepth > 0) {
+                    $braceDepth--;
+                }
+                $index++;
+                continue;
+            }
+
+            if ($char === '>' && $braceDepth === 0) {
+                return $index;
+            }
+
+            $index++;
         }
 
-        return implode('', $segments);
+        return null;
     }
 
     /**

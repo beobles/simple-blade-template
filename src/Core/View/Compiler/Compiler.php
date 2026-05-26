@@ -152,63 +152,82 @@ class Compiler implements CompilerInterface
 
     protected function preprocessHtmlBlocks(string $content, string $templateFile): string
     {
-        $pattern = '/<\s*(\/?)\s*' . preg_quote(self::HTML_BLOCK_PREFIX, '/') . '([a-zA-Z_][a-zA-Z0-9_]*)\b([^>]*)>/';
-        $searchOffset = 0;
+        $result = '';
+        $cursor = 0;
+        $length = strlen($content);
+        $prefixPattern = '/\G<\s*(\/?)\s*' . preg_quote(self::HTML_BLOCK_PREFIX, '/') . '([a-zA-Z_][a-zA-Z0-9_]*)\b/A';
 
-        return (string) preg_replace_callback(
-            $pattern,
-            function (array $match) use ($content, $templateFile, &$searchOffset): string {
-                $fullMatch = $match[0] ?? '';
-                $isClosingTag = ($match[1] ?? '') === '/';
-                $name = $match[2] ?? '';
-                $rawAttributes = $match[3] ?? '';
+        while ($cursor < $length) {
+            $start = strpos($content, '<', $cursor);
+            if ($start === false) {
+                $result .= substr($content, $cursor);
+                break;
+            }
 
-                $offset = strpos($content, $fullMatch, $searchOffset);
-                if ($offset !== false) {
-                    $searchOffset = $offset + strlen($fullMatch);
-                }
-                $line = $offset === false ? 1 : (substr_count(substr($content, 0, $offset), "\n") + 1);
+            $result .= substr($content, $cursor, $start - $cursor);
+            if (!preg_match($prefixPattern, $content, $match, 0, $start)) {
+                $result .= '<';
+                $cursor = $start + 1;
+                continue;
+            }
 
-                if ($isClosingTag) {
-                    if (isset(self::HTML_BLOCK_CLOSINGS[$name])) {
-                        return '@' . self::HTML_BLOCK_CLOSINGS[$name];
-                    }
+            $tagHeadLength = strlen($match[0] ?? '');
+            $tagEnd = $this->findTagEnd($content, $start + $tagHeadLength);
+            if ($tagEnd === null) {
+                $result .= substr($content, $start);
+                break;
+            }
 
-                    throw new SyntaxException(
-                        "Directive @{$name} does not support block closing tag",
-                        $templateFile,
-                        $line,
-                        $fullMatch,
-                        "Use <" . self::HTML_BLOCK_PREFIX . "{$name} ... />"
-                    );
-                }
+            $fullMatch = substr($content, $start, ($tagEnd - $start) + 1);
+            $isClosingTag = ($match[1] ?? '') === '/';
+            $name = $match[2] ?? '';
+            $rawAttributes = substr($content, $start + $tagHeadLength, $tagEnd - ($start + $tagHeadLength));
+            $line = substr_count(substr($content, 0, $start), "\n") + 1;
 
-                $trimmedAttributes = trim($rawAttributes);
-                $isSelfClosing = $trimmedAttributes !== '' && substr($trimmedAttributes, -1) === '/';
-
-                if ($isSelfClosing) {
-                    $trimmedAttributes = rtrim(substr($trimmedAttributes, 0, -1));
-                }
-
-                if (in_array($name, self::HTML_BLOCK_SELF_ONLY, true) && !$isSelfClosing) {
-                    throw new SyntaxException(
-                        "Directive @{$name} must use self-closing HTML block syntax",
-                        $templateFile,
-                        $line,
-                        $fullMatch,
-                        "Use <" . self::HTML_BLOCK_PREFIX . "{$name} ... />"
-                    );
+            if ($isClosingTag) {
+                if (isset(self::HTML_BLOCK_CLOSINGS[$name])) {
+                    $result .= '@' . self::HTML_BLOCK_CLOSINGS[$name];
+                    $cursor = $tagEnd + 1;
+                    continue;
                 }
 
-                $expression = $this->extractHtmlBlockExpression($name, $trimmedAttributes);
-                if ($expression !== null && trim($expression) !== '') {
-                    return '@' . $name . '(' . trim($expression) . ')';
-                }
+                throw new SyntaxException(
+                    "Directive @{$name} does not support block closing tag",
+                    $templateFile,
+                    $line,
+                    $fullMatch,
+                    "Use <" . self::HTML_BLOCK_PREFIX . "{$name} ... />"
+                );
+            }
 
-                return '@' . $name;
-            },
-            $content
-        );
+            $trimmedAttributes = trim($rawAttributes);
+            $isSelfClosing = $trimmedAttributes !== '' && substr($trimmedAttributes, -1) === '/';
+
+            if ($isSelfClosing) {
+                $trimmedAttributes = rtrim(substr($trimmedAttributes, 0, -1));
+            }
+
+            if (in_array($name, self::HTML_BLOCK_SELF_ONLY, true) && !$isSelfClosing) {
+                throw new SyntaxException(
+                    "Directive @{$name} must use self-closing HTML block syntax",
+                    $templateFile,
+                    $line,
+                    $fullMatch,
+                    "Use <" . self::HTML_BLOCK_PREFIX . "{$name} ... />"
+                );
+            }
+
+            $expression = $this->extractHtmlBlockExpression($name, $trimmedAttributes);
+            if ($expression !== null && trim($expression) !== '') {
+                $result .= '@' . $name . '(' . trim($expression) . ')';
+            } else {
+                $result .= '@' . $name;
+            }
+
+            $cursor = $tagEnd + 1;
+        }
+
+        return $result;
     }
 
     protected function extractHtmlBlockExpression(string $directiveName, string $rawAttributes): ?string
@@ -217,13 +236,7 @@ class Compiler implements CompilerInterface
             return null;
         }
 
-        $attributes = [];
-        preg_match_all('/([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*("([^"]*)"|\'([^\']*)\')/', $rawAttributes, $matches, PREG_SET_ORDER);
-        foreach ($matches as $attributeMatch) {
-            $key = $attributeMatch[1] ?? '';
-            $value = $attributeMatch[3] ?? ($attributeMatch[4] ?? '');
-            $attributes[$key] = $value;
-        }
+        $attributes = $this->parseHtmlBlockAttributes($rawAttributes);
 
         $pick = static function (array $source, array $keys): ?string {
             foreach ($keys as $key) {
@@ -251,6 +264,134 @@ class Compiler implements CompilerInterface
         }
 
         return $pick($attributes, ['expression', 'args']);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function parseHtmlBlockAttributes(string $rawAttributes): array
+    {
+        $attributes = [];
+        $length = strlen($rawAttributes);
+        $index = 0;
+
+        while ($index < $length) {
+            while ($index < $length && ctype_space($rawAttributes[$index])) {
+                $index++;
+            }
+
+            if ($index >= $length || $rawAttributes[$index] === '/') {
+                break;
+            }
+
+            if (!preg_match('/\G([a-zA-Z_][a-zA-Z0-9_-]*)/A', $rawAttributes, $nameMatch, 0, $index)) {
+                $index++;
+                continue;
+            }
+
+            $key = $nameMatch[1] ?? '';
+            $index += strlen($key);
+
+            while ($index < $length && ctype_space($rawAttributes[$index])) {
+                $index++;
+            }
+
+            if ($index >= $length || $rawAttributes[$index] !== '=') {
+                continue;
+            }
+
+            $index++;
+            while ($index < $length && ctype_space($rawAttributes[$index])) {
+                $index++;
+            }
+
+            if ($index >= $length) {
+                break;
+            }
+
+            $first = $rawAttributes[$index];
+            if ($first !== '"' && $first !== "'") {
+                continue;
+            }
+
+            $quote = $first;
+            $index++;
+            $valueStart = $index;
+            $escaped = false;
+
+            while ($index < $length) {
+                $char = $rawAttributes[$index];
+                if ($escaped) {
+                    $escaped = false;
+                } elseif ($char === '\\') {
+                    $escaped = true;
+                } elseif ($char === $quote) {
+                    break;
+                }
+                $index++;
+            }
+
+            $value = substr($rawAttributes, $valueStart, max(0, $index - $valueStart));
+            $attributes[$key] = stripcslashes($value);
+
+            if ($index < $length && $rawAttributes[$index] === $quote) {
+                $index++;
+            }
+        }
+
+        return $attributes;
+    }
+
+    protected function findTagEnd(string $content, int $index): ?int
+    {
+        $length = strlen($content);
+        $quote = null;
+        $escaped = false;
+        $braceDepth = 0;
+
+        while ($index < $length) {
+            $char = $content[$index];
+
+            if ($quote !== null) {
+                if ($escaped) {
+                    $escaped = false;
+                } elseif ($char === '\\') {
+                    $escaped = true;
+                } elseif ($char === $quote) {
+                    $quote = null;
+                }
+                $index++;
+                continue;
+            }
+
+            if ($char === '"' || $char === "'") {
+                $quote = $char;
+                $index++;
+                continue;
+            }
+
+            if ($char === '{') {
+                $braceDepth++;
+                $index++;
+                continue;
+            }
+
+            if ($char === '}') {
+                if ($braceDepth > 0) {
+                    $braceDepth--;
+                }
+                $index++;
+                continue;
+            }
+
+            if ($char === '>' && $braceDepth === 0) {
+                return $index;
+            }
+
+            $index++;
+        }
+
+        return null;
     }
 
     protected function assertNoLegacyBladeSyntax(string $content, string $templateFile): void
