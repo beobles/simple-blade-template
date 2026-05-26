@@ -1,4 +1,4 @@
-# Simple View Template Engine (React-like Syntax)
+# Simple View Template Engine (Sintaxe Declarativa)
 
 Motor de templates em PHP, sem Composer e sem dependências externas.
 
@@ -19,7 +19,7 @@ Sem objetos extras de configuração.
 
 ## O que este sistema entrega
 
-- Sintaxe estilo React/Next-like com transformação segura para pipeline interno.
+- Sintaxe declarativa com transformação segura para pipeline interno.
 - Renderização segura com resolução restrita de paths.
 - Cache de templates compilados com permissões restritas.
 - Controle de includes com proteção contra ciclo e profundidade máxima.
@@ -76,7 +76,7 @@ $view = new View([
 | `max_include_depth` | `int` | `20` | Limite de includes aninhados |
 | `extensions` / `template_extensions` | `array<int,string>` | `['blade.php','php','tpl','html','htm','jsx','tsx']` | Extensões buscadas quando não há extensão explícita |
 
-> `jsx` e `tsx` aqui representam templates server-side com sintaxe React-like da engine (transformada internamente em tags `view:`), não JSX/TSX de frontend.
+> `jsx` e `tsx` aqui representam templates server-side com sintaxe declarativa da engine (transformada internamente em tags `view:`), não JSX/TSX de frontend.
 
 ---
 
@@ -142,7 +142,7 @@ Exposição da engine interna para cenários realmente avançados.
 
 ---
 
-## Sintaxe principal (React/Next-like)
+## Sintaxe principal (Declarativa)
 
 A sintaxe recomendada agora é baseada em componentes declarativos:
 
@@ -169,7 +169,7 @@ A sintaxe recomendada agora é baseada em componentes declarativos:
 
 ### Regra profissional para atributos de componentes
 
-Para componentes React-like da engine (`<If>`, `<ForEach>`, `<Include>`, `<Echo>`, etc.), use **sempre**:
+Para componentes declarativos da engine (`<If>`, `<ForEach>`, `<Include>`, `<Echo>`, etc.), use **sempre**:
 
 - `atributo={...}` para qualquer expressão
 - inclusive string literal: `template={'partials.menu'}`
@@ -196,7 +196,8 @@ Isso elimina conflito com atributos HTML genéricos e deixa o parser previsível
 | `<Empty />` | Bloco de vazio no `ForElse` |
 | `</ForElse>` | Fechamento do `ForElse` |
 | `<Include template={...} data={...} />` | Include de template |
-| `<IncludeWhen when={...} template={...} data={...} />` | Include condicional |
+| `<Include when={...} template={...} data={...} />` | Include condicional (quando verdadeiro) |
+| `<Include unless={...} template={...} data={...} />` | Include condicional (quando falso) |
 | `<Auth>` / `</Auth>` | Bloco para usuário autenticado |
 | `<Guest>` / `</Guest>` | Bloco para visitante |
 | `<Can ability={...} subject={...}>` | Bloco de autorização positiva |

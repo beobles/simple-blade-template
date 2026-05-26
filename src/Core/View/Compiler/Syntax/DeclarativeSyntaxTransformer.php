@@ -5,10 +5,10 @@ namespace Core\View\Compiler\Syntax;
 use Core\View\Exception\SyntaxException;
 
 /**
- * Transforma sintaxe declarativa estilo React/Next para tags intermediárias `view:`
+ * Transforma sintaxe declarativa para tags intermediárias `view:`
  * e expressões internas do compilador.
  */
-class ReactLikeSyntaxTransformer
+class DeclarativeSyntaxTransformer
 {
     protected const PREFIX = 'view:';
 
@@ -33,8 +33,6 @@ class ReactLikeSyntaxTransformer
         'Continue' => 'continue',
         'Include' => 'include',
         'IncludeIf' => 'includeIf',
-        'IncludeWhen' => 'includeWhen',
-        'IncludeUnless' => 'includeUnless',
         'Json' => 'json',
         'Csrf' => 'csrf',
         'Auth' => 'auth',
@@ -70,6 +68,10 @@ class ReactLikeSyntaxTransformer
         'Echo' => 'escaped',
         'Raw' => 'raw',
     ];
+    protected const DEPRECATED_COMPONENTS = [
+        'IncludeWhen' => 'Use <Include when={...} template={...} data={...} />',
+        'IncludeUnless' => 'Use <Include unless={...} template={...} data={...} />',
+    ];
 
     /**
      * @var array<string, array<int, string>>
@@ -90,10 +92,8 @@ class ReactLikeSyntaxTransformer
         'Default' => [],
         'Break' => ['condition', 'when', 'test', 'expression', 'args'],
         'Continue' => ['condition', 'when', 'test', 'expression', 'args'],
-        'Include' => ['expression', 'args', 'template', 'view', 'data', 'with'],
+        'Include' => ['expression', 'args', 'when', 'unless', 'condition', 'template', 'view', 'data', 'with'],
         'IncludeIf' => ['expression', 'args', 'template', 'view', 'data', 'with'],
-        'IncludeWhen' => ['expression', 'args', 'when', 'condition', 'template', 'view', 'data', 'with'],
-        'IncludeUnless' => ['expression', 'args', 'when', 'condition', 'template', 'view', 'data', 'with'],
         'Json' => ['expression', 'args', 'value', 'data', 'flags', 'depth'],
         'Csrf' => [],
         'Auth' => [],
@@ -128,6 +128,16 @@ class ReactLikeSyntaxTransformer
                     $searchOffset = $offset + strlen($fullMatch);
                 }
                 $line = $offset === false ? 1 : (substr_count(substr($content, 0, $offset), "\n") + 1);
+
+                if (isset(self::DEPRECATED_COMPONENTS[$component])) {
+                    throw new SyntaxException(
+                        "Component <{$component}> is no longer supported",
+                        $templateFile,
+                        $line,
+                        $fullMatch,
+                        self::DEPRECATED_COMPONENTS[$component]
+                    );
+                }
 
                 if (isset(self::SPECIAL_OUTPUT_COMPONENTS[$component])) {
                     if ($isClosingTag) {
@@ -182,6 +192,7 @@ class ReactLikeSyntaxTransformer
                     $line
                 );
                 $attributes = $this->flattenAttributeValues($attributesMeta);
+                $directive = $this->resolveDirectiveFromAttributes($directive, $component, $attributes, $templateFile, $line, $fullMatch);
                 $isSelfClosing = str_ends_with(trim($rawAttributes), '/');
                 $expression = $this->extractDirectiveExpression($directive, $attributes);
                 $suffix = $isSelfClosing ? ' />' : '>';
@@ -560,7 +571,7 @@ class ReactLikeSyntaxTransformer
             if ($direct !== null) {
                 return $direct;
             }
-            $condition = $this->pickFirstAttribute($attributes, ['when', 'condition']);
+            $condition = $this->pickFirstAttribute($attributes, ['when', 'condition', 'unless']);
             $template = $this->pickFirstAttribute($attributes, ['template', 'view']);
             if ($condition === null || $template === null) {
                 return null;
@@ -634,5 +645,41 @@ class ReactLikeSyntaxTransformer
             || str_contains($expression, '->')
             || str_contains($expression, '::')
             || str_contains($expression, '[');
+    }
+
+    protected function resolveDirectiveFromAttributes(
+        string $directive,
+        string $component,
+        array $attributes,
+        string $templateFile,
+        int $line,
+        string $fullMatch
+    ): string {
+        if ($component !== 'Include' || $directive !== 'include') {
+            return $directive;
+        }
+
+        $hasWhen = array_key_exists('when', $attributes) || array_key_exists('condition', $attributes);
+        $hasUnless = array_key_exists('unless', $attributes);
+
+        if ($hasWhen && $hasUnless) {
+            throw new SyntaxException(
+                'Component <Include> cannot define both when and unless',
+                $templateFile,
+                $line,
+                $fullMatch,
+                'Use only one conditional attribute: when={...} or unless={...}'
+            );
+        }
+
+        if ($hasWhen) {
+            return 'includeWhen';
+        }
+
+        if ($hasUnless) {
+            return 'includeUnless';
+        }
+
+        return $directive;
     }
 }

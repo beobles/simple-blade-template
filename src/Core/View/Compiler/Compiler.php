@@ -3,18 +3,18 @@
 namespace Core\View\Compiler;
 
 use Core\View\Contract\CompilerInterface;
-use Core\View\Compiler\Syntax\ReactLikeSyntaxTransformer;
+use Core\View\Compiler\Syntax\DeclarativeSyntaxTransformer;
 use Core\View\Exception\CompilationException;
 use Core\View\Exception\SyntaxException;
 use Core\View\Security\SecurityManager;
 
 /**
- * Compilador de templates da sintaxe View React-like.
+ * Compilador de templates da sintaxe declarativa.
  */
 class Compiler implements CompilerInterface
 {
     protected SecurityManager $security;
-    protected ReactLikeSyntaxTransformer $reactSyntaxTransformer;
+    protected DeclarativeSyntaxTransformer $syntaxTransformer;
     protected array $customDirectives = [];
     protected array $internalCallbacks = [];
     protected const HTML_BLOCK_PREFIX = 'view:';
@@ -52,7 +52,7 @@ class Compiler implements CompilerInterface
     public function __construct(SecurityManager $security = null)
     {
         $this->security = $security ?? new SecurityManager();
-        $this->reactSyntaxTransformer = new ReactLikeSyntaxTransformer();
+        $this->syntaxTransformer = new DeclarativeSyntaxTransformer();
     }
 
     /**
@@ -62,7 +62,7 @@ class Compiler implements CompilerInterface
     {
         try {
             $this->assertNoLegacyBladeSyntax($content, $templateFile);
-            $content = $this->reactSyntaxTransformer->transform($content, $templateFile);
+            $content = $this->syntaxTransformer->transform($content, $templateFile);
             $content = $this->preprocessHtmlBlocks($content, $templateFile);
 
             // Tokenização
@@ -94,7 +94,7 @@ class Compiler implements CompilerInterface
     {
         try {
             $this->assertNoLegacyBladeSyntax($content, '');
-            $content = $this->reactSyntaxTransformer->transform($content, '');
+            $content = $this->syntaxTransformer->transform($content, '');
             $content = $this->preprocessHtmlBlocks($content, '');
             $lexer = new Lexer($content);
             $tokens = $lexer->tokenize();
@@ -261,7 +261,7 @@ class Compiler implements CompilerInterface
                 $templateFile,
                 0,
                 '<blade:...>',
-                'Use React-like components such as <If>, <ForEach>, <Include> and { ... }'
+                'Use declarative components such as <If>, <ForEach>, <Include> and { ... }'
             );
         }
 
@@ -276,7 +276,7 @@ class Compiler implements CompilerInterface
                 $templateFile,
                 0,
                 '@directive',
-                'Use React-like components such as <If>, <ElseIf />, <ForEach>, <Echo /> and <Raw />'
+                'Use declarative components such as <If>, <ElseIf />, <ForEach>, <Echo /> and <Raw />'
             );
         }
     }
