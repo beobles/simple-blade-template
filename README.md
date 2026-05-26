@@ -142,6 +142,46 @@ Exposição da engine interna para cenários realmente avançados.
 
 ## Diretivas suportadas
 
+## Nova sintaxe alternativa: blocos HTML (`<blade:...>`)
+
+Além da sintaxe `@...`, agora você pode escrever templates com blocos HTML namespaced:
+
+- Prefixo reservado: `blade:`
+- Tags de bloco com fechamento explícito (ex.: `<blade:if ...>...</blade:if>`)
+- Tags de controle pontual em modo self-closing (ex.: `<blade:else />`, `<blade:include ... />`)
+- A sintaxe antiga continua funcionando normalmente (retrocompatível)
+
+### Exemplos rápidos
+
+```html
+<blade:if condition="$user !== null">
+  <h1>{{ $user['name'] }}</h1>
+<blade:else />
+  <h1>Visitante</h1>
+</blade:if>
+
+<blade:foreach each="$items as $item">
+  <li>{{ $item['title'] }}</li>
+</blade:foreach>
+
+<blade:include expression="'partials.menu', ['current' => $current]" />
+```
+
+### Mapeamento principal
+
+| Bloco HTML | Diretiva equivalente |
+|---|---|
+| `<blade:if condition="...">` | `@if(...)` |
+| `<blade:elseif condition="..." />` | `@elseif(...)` |
+| `<blade:else />` | `@else` |
+| `</blade:if>` | `@endif` |
+| `<blade:foreach each="...">` | `@foreach(...)` |
+| `</blade:foreach>` | `@endforeach` |
+| `<blade:include expression="..." />` | `@include(...)` |
+| `<blade:includeWhen expression="..." />` | `@includeWhen(...)` |
+| `<blade:auth>` | `@auth` |
+| `</blade:auth>` | `@endauth` |
+
 ### Saída e comentário
 - `{{ ... }}` (escapado)
 - `{!! ... !!}` (raw)

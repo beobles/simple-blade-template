@@ -15,6 +15,37 @@ class Compiler implements CompilerInterface
     protected SecurityManager $security;
     protected array $customDirectives = [];
     protected array $internalCallbacks = [];
+    protected const HTML_BLOCK_PREFIX = 'blade:';
+    protected const HTML_BLOCK_CLOSINGS = [
+        'if' => 'endif',
+        'unless' => 'endunless',
+        'isset' => 'endisset',
+        'empty' => 'endempty',
+        'foreach' => 'endforeach',
+        'forelse' => 'endforelse',
+        'for' => 'endfor',
+        'while' => 'endwhile',
+        'switch' => 'endswitch',
+        'auth' => 'endauth',
+        'guest' => 'endguest',
+        'can' => 'endcan',
+        'cannot' => 'endcannot',
+    ];
+    protected const HTML_BLOCK_SELF_ONLY = [
+        'elseif',
+        'else',
+        'case',
+        'default',
+        'break',
+        'continue',
+        'include',
+        'includeIf',
+        'includeWhen',
+        'includeUnless',
+        'json',
+        'csrf',
+        'php',
+    ];
 
     public function __construct(SecurityManager $security = null)
     {
@@ -27,6 +58,8 @@ class Compiler implements CompilerInterface
     public function compile(string $content, string $templateFile = ''): string
     {
         try {
+            $content = $this->preprocessHtmlBlocks($content, $templateFile);
+
             // Tokenização
             $lexer = new Lexer($content);
             $tokens = $lexer->tokenize();
@@ -55,6 +88,7 @@ class Compiler implements CompilerInterface
     public function validate(string $content): bool
     {
         try {
+            $content = $this->preprocessHtmlBlocks($content, '');
             $lexer = new Lexer($content);
             $tokens = $lexer->tokenize();
             $parser = $this->createConfiguredParser($tokens, '');
@@ -107,5 +141,108 @@ class Compiler implements CompilerInterface
     public function getSecurity(): SecurityManager
     {
         return $this->security;
+    }
+
+    protected function preprocessHtmlBlocks(string $content, string $templateFile): string
+    {
+        $pattern = '/<\s*(\/?)\s*' . preg_quote(self::HTML_BLOCK_PREFIX, '/') . '([a-zA-Z_][a-zA-Z0-9_]*)\b([^>]*)>/';
+        $searchOffset = 0;
+
+        return (string) preg_replace_callback(
+            $pattern,
+            function (array $match) use ($content, $templateFile, &$searchOffset): string {
+                $fullMatch = $match[0] ?? '';
+                $isClosingTag = ($match[1] ?? '') === '/';
+                $name = $match[2] ?? '';
+                $rawAttributes = $match[3] ?? '';
+
+                $offset = strpos($content, $fullMatch, $searchOffset);
+                if ($offset !== false) {
+                    $searchOffset = $offset + strlen($fullMatch);
+                }
+                $line = $offset === false ? 1 : (substr_count(substr($content, 0, $offset), "\n") + 1);
+
+                if ($isClosingTag) {
+                    if (isset(self::HTML_BLOCK_CLOSINGS[$name])) {
+                        return '@' . self::HTML_BLOCK_CLOSINGS[$name];
+                    }
+
+                    throw new SyntaxException(
+                        "Directive @{$name} does not support block closing tag",
+                        $templateFile,
+                        $line,
+                        $fullMatch,
+                        "Use <" . self::HTML_BLOCK_PREFIX . "{$name} ... />"
+                    );
+                }
+
+                $trimmedAttributes = trim($rawAttributes);
+                $isSelfClosing = $trimmedAttributes !== '' && substr($trimmedAttributes, -1) === '/';
+
+                if ($isSelfClosing) {
+                    $trimmedAttributes = rtrim(substr($trimmedAttributes, 0, -1));
+                }
+
+                if (in_array($name, self::HTML_BLOCK_SELF_ONLY, true) && !$isSelfClosing) {
+                    throw new SyntaxException(
+                        "Directive @{$name} must use self-closing HTML block syntax",
+                        $templateFile,
+                        $line,
+                        $fullMatch,
+                        "Use <" . self::HTML_BLOCK_PREFIX . "{$name} ... />"
+                    );
+                }
+
+                $expression = $this->extractHtmlBlockExpression($name, $trimmedAttributes);
+                if ($expression !== null && trim($expression) !== '') {
+                    return '@' . $name . '(' . trim($expression) . ')';
+                }
+
+                return '@' . $name;
+            },
+            $content
+        );
+    }
+
+    protected function extractHtmlBlockExpression(string $directiveName, string $rawAttributes): ?string
+    {
+        if (trim($rawAttributes) === '') {
+            return null;
+        }
+
+        $attributes = [];
+        preg_match_all('/([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*("([^"]*)"|\'([^\']*)\')/', $rawAttributes, $matches, PREG_SET_ORDER);
+        foreach ($matches as $attributeMatch) {
+            $key = $attributeMatch[1] ?? '';
+            $value = $attributeMatch[3] ?? ($attributeMatch[4] ?? '');
+            $attributes[$key] = $value;
+        }
+
+        $pick = static function (array $source, array $keys): ?string {
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $source) && trim((string) $source[$key]) !== '') {
+                    return (string) $source[$key];
+                }
+            }
+            return null;
+        };
+
+        if (in_array($directiveName, ['if', 'elseif', 'unless', 'isset', 'empty', 'while', 'break', 'continue'], true)) {
+            return $pick($attributes, ['condition', 'test', 'expression', 'args']);
+        }
+
+        if (in_array($directiveName, ['foreach', 'forelse', 'for'], true)) {
+            return $pick($attributes, ['each', 'expression', 'args']);
+        }
+
+        if (in_array($directiveName, ['switch', 'case', 'includeWhen', 'includeUnless'], true)) {
+            return $pick($attributes, ['expression', 'condition', 'args']);
+        }
+
+        if (in_array($directiveName, ['include', 'includeIf', 'json', 'php', 'can', 'cannot'], true)) {
+            return $pick($attributes, ['expression', 'args']);
+        }
+
+        return $pick($attributes, ['expression', 'args']);
     }
 }
