@@ -22,6 +22,8 @@ class TemplateEngine implements EngineInterface
      */
     protected const RESERVED_SCOPE_KEYS = ['__blade', '__templateData', '_engineContext'];
 
+    protected const DEFAULT_CACHE_DIR_PREFIX = 'simple-blade-cache-';
+
     /**
      * Compilador responsável por transformar template em PHP.
      */
@@ -108,8 +110,12 @@ class TemplateEngine implements EngineInterface
     ) {
         $this->security = $security ?? new SecurityManager();
         $this->compiler = $compiler ?? new Compiler($this->security);
+        $defaultCachePath = sys_get_temp_dir()
+            . DIRECTORY_SEPARATOR
+            . self::DEFAULT_CACHE_DIR_PREFIX
+            . substr(hash('sha256', (string) __DIR__), 0, 16);
         $this->cache = $cache ?? new CacheManager(
-            $cachePath ?? sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'simple-blade-cache'
+            $cachePath ?? $defaultCachePath
         );
 
         foreach ($viewPaths as $path) {

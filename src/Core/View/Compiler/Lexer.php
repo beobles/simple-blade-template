@@ -47,7 +47,7 @@ class Lexer
             } elseif ($this->match('@@')) {
                 $this->position += 2;
                 $this->addToken(self::TOKEN_TEXT, '@');
-            } elseif ($this->content[$this->position] === '@') {
+            } elseif ($this->match('@')) {
                 $this->scanDirective();
             } else {
                 $this->scanText();

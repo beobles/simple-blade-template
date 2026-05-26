@@ -83,7 +83,7 @@ class Parser
     {
         $line = $token['line'] ?? 0;
         $expression = $this->requireExpression($token['value'] ?? '', $line, 'variable');
-        return "echo htmlspecialchars((string)($expression), " . $this->getHtmlEscapeFlagsExpression() . ", 'UTF-8');\n";
+        return "echo htmlspecialchars((string)($expression), {$this->htmlEscapeFlagsExpression}, 'UTF-8');\n";
     }
 
     /**
@@ -455,11 +455,6 @@ class Parser
         }
 
         return $arguments;
-    }
-
-    protected function getHtmlEscapeFlagsExpression(): string
-    {
-        return $this->htmlEscapeFlagsExpression;
     }
 
     protected function pushStructure(string $type, string $closing, int $line, array $meta = []): void

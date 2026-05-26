@@ -64,7 +64,7 @@ $engine = TemplateEngine::fromConfig($config);
 echo $engine->render('pages.home');     // procura pages/home.blade.php, .php, .tpl, .html, .htm...
 echo $engine->render('email/welcome.tpl'); // extensão explícita também funciona
 
-// disponível no PHP quando debug + expose_render_context estão ativos:
+// disponível no template como variável local quando debug + expose_render_context estão ativos:
 // $_engineContext
 
 $lastContext = $engine->getLastRenderContext();

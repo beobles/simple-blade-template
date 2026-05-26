@@ -21,7 +21,7 @@ class CacheManager implements CacheInterface
         $this->enabled = $enabled;
 
         if (!is_dir($this->cachePath)) {
-            mkdir($this->cachePath, 0755, true);
+            mkdir($this->cachePath, 0700, true);
         }
     }
 
@@ -74,7 +74,7 @@ class CacheManager implements CacheInterface
             $dir = dirname($path);
 
             if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
+                mkdir($dir, 0700, true);
             }
 
             return file_put_contents($path, $content, LOCK_EX) !== false;
