@@ -75,7 +75,6 @@ class ReactLikeSyntaxTransformer
         $content = $this->transformComponentTags($content, $templateFile);
         return $this->transformTextExpressions($content);
     }
-
     protected function transformComponentTags(string $content, string $templateFile): string
     {
         $pattern = '/<\s*(\/?)\s*([A-Z][A-Za-z0-9]*)\b([^>]*)>/';
@@ -315,4 +314,3 @@ class ReactLikeSyntaxTransformer
             || str_contains($expression, '[');
     }
 }
-
