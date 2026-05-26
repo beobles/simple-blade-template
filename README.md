@@ -79,6 +79,8 @@ $lastContext = $engine->getLastRenderContext();
 ## Observações
 
 - O projeto não utiliza Composer.
+- O cache compilado usa permissões restritas (`0700`) por padrão para reduzir exposição em ambientes compartilhados.
+- O parser não suporta bloco `@php ... @endphp`; use apenas `@php(expressão)`.
 - Para validação de sintaxe:
 
 ```bash

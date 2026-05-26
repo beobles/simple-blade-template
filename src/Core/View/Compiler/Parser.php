@@ -518,6 +518,8 @@ class Parser
 
     protected function shouldSkipTextToken(string $text): bool
     {
+        // Em @switch, o parser ignora apenas whitespace antes do primeiro @case/@default
+        // para evitar geração de saída vazia inesperada no início do bloco.
         if (!empty($this->structureStack)) {
             $top = end($this->structureStack);
             if ($top['type'] === 'switch' && empty($top['meta']['has_case']) && trim($text) === '') {

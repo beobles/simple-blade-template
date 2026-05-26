@@ -68,6 +68,9 @@ class View
     /**
      * Compartilhar variáveis globais.
      *
+     * Quando $key for array, $value é ignorado e o array é mesclado como lote.
+     *
+     * @param array<string, mixed>|string $key
      * @param mixed $value
      */
     public function assign($key, $value = null): self
@@ -79,6 +82,9 @@ class View
     /**
      * Alias semântico para assign().
      *
+     * Quando $key for array, $value é ignorado e o array é mesclado como lote.
+     *
+     * @param array<string, mixed>|string $key
      * @param mixed $value
      */
     public function share($key, $value = null): self
