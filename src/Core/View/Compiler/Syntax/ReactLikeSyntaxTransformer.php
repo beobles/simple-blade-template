@@ -5,7 +5,8 @@ namespace Core\View\Compiler\Syntax;
 use Core\View\Exception\SyntaxException;
 
 /**
- * Transforma sintaxe declarativa estilo React/Next para a sintaxe interna.
+ * Transforma sintaxe declarativa estilo React/Next para tags intermediárias `view:`
+ * e expressões internas do compilador.
  */
 class ReactLikeSyntaxTransformer
 {

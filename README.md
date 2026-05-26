@@ -76,7 +76,7 @@ $view = new View([
 | `max_include_depth` | `int` | `20` | Limite de includes aninhados |
 | `extensions` / `template_extensions` | `array<int,string>` | `['blade.php','php','tpl','html','htm','jsx','tsx']` | Extensões buscadas quando não há extensão explícita |
 
-> `jsx` e `tsx` aqui representam templates server-side com sintaxe React-like da engine (transformada para diretivas internas), não JSX/TSX de frontend.
+> `jsx` e `tsx` aqui representam templates server-side com sintaxe React-like da engine (transformada internamente em tags `view:`), não JSX/TSX de frontend.
 
 ---
 

@@ -265,7 +265,7 @@ class Compiler implements CompilerInterface
             );
         }
 
-        if (preg_match('/(^|[^a-zA-Z0-9_])@([a-zA-Z_][a-zA-Z0-9_]*)/', $content) === 1) {
+        if (preg_match('/(^|[^a-zA-Z0-9_@])@(?!@)([a-zA-Z_][a-zA-Z0-9_]*)/', $content) === 1) {
             throw new SyntaxException(
                 'Legacy @directive syntax is no longer supported',
                 $templateFile,
