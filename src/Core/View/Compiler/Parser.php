@@ -81,7 +81,7 @@ class Parser
     {
         $line = $token['line'] ?? 0;
         $expression = $this->requireExpression($token['value'] ?? '', $line, 'variable');
-        return "echo htmlspecialchars((string)($expression), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');\n";
+        return "echo htmlspecialchars((string)($expression), " . $this->getHtmlEscapeFlagsExpression() . ", 'UTF-8');\n";
     }
 
     /**
@@ -167,7 +167,7 @@ class Parser
                 return "}\n";
 
             case 'forelse':
-                $marker = '$__bladeForelseEmpty' . (++$this->uniqueCounter);
+                $marker = '$bladeForelseEmpty' . (++$this->uniqueCounter);
                 $this->pushStructure('forelse', 'endforelse', $line, [
                     'marker' => $marker,
                     'empty_used' => false,
@@ -234,7 +234,7 @@ class Parser
                     return "{$phpContent};\n";
                 }
                 throw new SyntaxException(
-                    'Directive @php without inline expression is not supported',
+                    'Block-style @php ... @endphp is not supported',
                     $this->templateFile,
                     $line,
                     '@php',
@@ -453,6 +453,11 @@ class Parser
         }
 
         return $arguments;
+    }
+
+    protected function getHtmlEscapeFlagsExpression(): string
+    {
+        return "ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0)";
     }
 
     protected function pushStructure(string $type, string $closing, int $line, array $meta = []): void

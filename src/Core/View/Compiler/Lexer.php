@@ -273,7 +273,7 @@ class Lexer
         }
 
         throw new SyntaxException(
-            "Unclosed directive arguments for @{$directiveName}",
+            "Unbalanced directive arguments for @{$directiveName}",
             '',
             $startLine,
             substr($this->content, $start, min(80, $this->length - $start)),

@@ -119,13 +119,10 @@ class TemplateEngine implements EngineInterface
     protected function renderTemplateFile(string $templateFile, array $data): string
     {
         $cacheKey = $this->buildCacheKey($templateFile);
-        $compiledCode = null;
+        $compiledPath = $this->cache->getPath($cacheKey);
+        $ephemeralPath = null;
 
-        if ($this->cache->isFresh($cacheKey, $templateFile)) {
-            $compiledCode = $this->cache->get($cacheKey);
-        }
-
-        if ($compiledCode === null || $compiledCode === '') {
+        if (!$this->cache->isFresh($cacheKey, $templateFile) || !is_file($compiledPath)) {
             $content = file_get_contents($templateFile);
             if ($content === false) {
                 throw new FileNotFoundException(
@@ -136,13 +133,22 @@ class TemplateEngine implements EngineInterface
             }
 
             $compiledCode = $this->compiler->compile($content, $templateFile);
-            $this->cache->put($cacheKey, $compiledCode);
+            if (!$this->cache->put($cacheKey, $compiledCode)) {
+                $ephemeralPath = $this->writeEphemeralCompiledFile($compiledCode);
+                $compiledPath = $ephemeralPath;
+            }
         }
 
-        return $this->evaluateCompiledCode($compiledCode, $templateFile, $data);
+        try {
+            return $this->evaluateCompiledFile($compiledPath, $templateFile, $data);
+        } finally {
+            if ($ephemeralPath !== null && is_file($ephemeralPath)) {
+                @unlink($ephemeralPath);
+            }
+        }
     }
 
-    protected function evaluateCompiledCode(string $compiledCode, string $templateFile, array $data): string
+    protected function evaluateCompiledFile(string $compiledPath, string $templateFile, array $data): string
     {
         $__blade = [
             'include' => function ($template, array $scope = [], array $with = [], bool $required = true): string {
@@ -164,7 +170,7 @@ class TemplateEngine implements EngineInterface
 
         ob_start();
         try {
-            eval('?>' . $compiledCode);
+            include $compiledPath;
             return (string) ob_get_clean();
         } catch (\Throwable $throwable) {
             ob_end_clean();
@@ -247,13 +253,13 @@ class TemplateEngine implements EngineInterface
         $token = '';
         if (is_callable($this->csrfTokenResolver)) {
             $token = (string) call_user_func($this->csrfTokenResolver);
-        } elseif (isset($_SESSION['_token'])) {
+        } elseif (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['_token'])) {
             $token = (string) $_SESSION['_token'];
         }
 
         if ($token === '') {
-            $token = bin2hex(random_bytes(16));
-            if (isset($_SESSION) && is_array($_SESSION)) {
+            $token = bin2hex(random_bytes(32));
+            if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION) && is_array($_SESSION)) {
                 $_SESSION['_token'] = $token;
             }
         }
@@ -265,6 +271,10 @@ class TemplateEngine implements EngineInterface
     {
         if (is_callable($this->authResolver)) {
             return (bool) call_user_func($this->authResolver);
+        }
+
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return false;
         }
 
         return isset($_SESSION['user']) || (!empty($_SESSION['authenticated']) && $_SESSION['authenticated'] === true);
@@ -353,7 +363,22 @@ class TemplateEngine implements EngineInterface
 
     protected function buildCacheKey(string $templateFile): string
     {
-        $mtime = file_exists($templateFile) ? (string) filemtime($templateFile) : '0';
+        $mtime = '0';
+        if (file_exists($templateFile)) {
+            $time = filemtime($templateFile);
+            $mtime = $time !== false ? (string) $time : '0';
+        }
         return $templateFile . '|' . $mtime;
+    }
+
+    protected function writeEphemeralCompiledFile(string $compiledCode): string
+    {
+        $tmpDir = sys_get_temp_dir();
+        $tmpPath = tempnam($tmpDir, 'blade_compiled_');
+        if ($tmpPath === false || file_put_contents($tmpPath, $compiledCode, LOCK_EX) === false) {
+            throw new RuntimeException("Failed to create temporary compiled template file in {$tmpDir}");
+        }
+
+        return $tmpPath;
     }
 }
