@@ -15,23 +15,89 @@ use Core\View\Security\SecurityManager;
  */
 class TemplateEngine implements EngineInterface
 {
+    /**
+     * Compilador responsável por transformar template em PHP.
+     */
     protected Compiler $compiler;
+
+    /**
+     * Cache de templates compilados.
+     */
     protected CacheManager $cache;
+
+    /**
+     * Camada de segurança para escaping/sanitização.
+     */
     protected SecurityManager $security;
+
+    /**
+     * @var array<int, string>
+     */
     protected array $viewPaths = [];
+
+    /**
+     * @var array<string, mixed>
+     */
     protected array $sharedData = [];
+
+    /**
+     * Pilha de includes ativos para detectar recursão/ciclos.
+     *
+     * @var array<int, string>
+     */
     protected array $includeStack = [];
+
+    /**
+     * Limite máximo de aninhamento de includes.
+     */
     protected int $maxIncludeDepth = 20;
+
+    /**
+     * @var callable|null
+     */
     protected $authResolver = null;
+
+    /**
+     * @var callable|null
+     */
     protected $authorizationResolver = null;
+
+    /**
+     * @var callable|null
+     */
     protected $csrfTokenResolver = null;
+
+    /**
+     * Extensões aceitas na busca automática de templates.
+     *
+     * @var array<int, string>
+     */
+    protected array $templateExtensions = ['blade.php', 'php', 'tpl', 'html', 'htm'];
+
+    /**
+     * Habilita rastreamento de contexto de renderização para desenvolvimento.
+     */
+    protected bool $debug = false;
+
+    /**
+     * Quando ativo, expõe o contexto atual como $__engineContext no template.
+     */
+    protected bool $exposeRenderContext = false;
+
+    /**
+     * Contexto consolidado da última renderização.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $lastRenderContext = [];
 
     public function __construct(
         array $viewPaths = [],
         ?Compiler $compiler = null,
         ?CacheManager $cache = null,
         ?SecurityManager $security = null,
-        ?string $cachePath = null
+        ?string $cachePath = null,
+        array $options = []
     ) {
         $this->security = $security ?? new SecurityManager();
         $this->compiler = $compiler ?? new Compiler($this->security);
@@ -42,6 +108,35 @@ class TemplateEngine implements EngineInterface
         foreach ($viewPaths as $path) {
             $this->addViewPath($path);
         }
+
+        $this->configure($options);
+    }
+
+    /**
+     * Criar engine a partir de configuração centralizada.
+     */
+    public static function fromConfig(
+        EngineConfig $config,
+        ?Compiler $compiler = null,
+        ?CacheManager $cache = null,
+        ?SecurityManager $security = null
+    ): self {
+        $engine = new self(
+            $config->getViewPaths(),
+            $compiler,
+            $cache,
+            $security,
+            $config->getCachePath(),
+            [
+                'cache_enabled' => $config->isCacheEnabled(),
+                'debug' => $config->isDebug(),
+                'expose_render_context' => $config->shouldExposeRenderContext(),
+                'max_include_depth' => $config->getMaxIncludeDepth(),
+                'template_extensions' => $config->getTemplateExtensions(),
+            ]
+        );
+
+        return $engine;
     }
 
     /**
@@ -51,7 +146,7 @@ class TemplateEngine implements EngineInterface
     {
         $templateFile = $this->resolveTemplatePath($template);
         $payload = array_merge($this->sharedData, $data);
-        return $this->renderTemplateFile($templateFile, $payload);
+        return $this->renderTemplateFile($templateFile, $payload, $template);
     }
 
     /**
@@ -90,6 +185,118 @@ class TemplateEngine implements EngineInterface
     }
 
     /**
+     * Configurar engine por array para setup direto e enxuto.
+     *
+     * Chaves suportadas:
+     * - template_extensions: array<int, string>
+     * - debug: bool
+     * - expose_render_context: bool
+     * - max_include_depth: int
+     * - cache_enabled: bool
+     *
+     * @param array<string, mixed> $options
+     */
+    public function configure(array $options): self
+    {
+        if (isset($options['template_extensions']) && is_array($options['template_extensions'])) {
+            $this->setTemplateExtensions($options['template_extensions']);
+        }
+
+        if (array_key_exists('debug', $options)) {
+            $this->setDebug((bool) $options['debug']);
+        }
+
+        if (array_key_exists('expose_render_context', $options)) {
+            $this->setExposeRenderContext((bool) $options['expose_render_context']);
+        }
+
+        if (array_key_exists('max_include_depth', $options)) {
+            $this->setMaxIncludeDepth((int) $options['max_include_depth']);
+        }
+
+        if (array_key_exists('cache_enabled', $options)) {
+            $this->cache->setEnabled((bool) $options['cache_enabled']);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Definir extensões de template para resolução automática.
+     *
+     * @param array<int, string> $extensions
+     */
+    public function setTemplateExtensions(array $extensions): self
+    {
+        $normalized = [];
+        foreach ($extensions as $extension) {
+            $value = ltrim(strtolower(trim((string) $extension)), '.');
+            if ($value !== '') {
+                $normalized[] = $value;
+            }
+        }
+
+        if (!empty($normalized)) {
+            $this->templateExtensions = array_values(array_unique($normalized));
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getTemplateExtensions(): array
+    {
+        return $this->templateExtensions;
+    }
+
+    /**
+     * Ativar/desativar modo debug.
+     */
+    public function setDebug(bool $enabled): self
+    {
+        $this->debug = $enabled;
+        return $this;
+    }
+
+    /**
+     * Verificar se o modo debug está ativo.
+     */
+    public function isDebug(): bool
+    {
+        return $this->debug;
+    }
+
+    /**
+     * Controlar exposição do contexto em tempo de render para templates.
+     */
+    public function setExposeRenderContext(bool $enabled): self
+    {
+        $this->exposeRenderContext = $enabled;
+        return $this;
+    }
+
+    /**
+     * Definir limite de profundidade de includes.
+     */
+    public function setMaxIncludeDepth(int $depth): self
+    {
+        $this->maxIncludeDepth = $depth > 0 ? $depth : 1;
+        return $this;
+    }
+
+    /**
+     * Obter o contexto da última renderização para troubleshooting em dev.
+     *
+     * @return array<string, mixed>
+     */
+    public function getLastRenderContext(): array
+    {
+        return $this->lastRenderContext;
+    }
+
+    /**
      * Definir callback de autenticação
      */
     public function setAuthResolver(callable $resolver): self
@@ -116,13 +323,17 @@ class TemplateEngine implements EngineInterface
         return $this;
     }
 
-    protected function renderTemplateFile(string $templateFile, array $data): string
+    protected function renderTemplateFile(string $templateFile, array $data, string $requestedTemplate = ''): string
     {
         $cacheKey = $this->buildCacheKey($templateFile);
         $compiledPath = $this->cache->getPath($cacheKey);
         $ephemeralPath = null;
+        $cacheHit = false;
+        $compiledNow = false;
 
-        if (!$this->cache->isFresh($cacheKey, $templateFile) || !is_file($compiledPath)) {
+        if ($this->cache->isFresh($cacheKey, $templateFile) && is_file($compiledPath)) {
+            $cacheHit = true;
+        } else {
             $content = file_get_contents($templateFile);
             if ($content === false) {
                 throw new FileNotFoundException(
@@ -133,11 +344,24 @@ class TemplateEngine implements EngineInterface
             }
 
             $compiledCode = $this->compiler->compile($content, $templateFile);
+            $compiledNow = true;
             if (!$this->cache->put($cacheKey, $compiledCode)) {
                 $ephemeralPath = $this->writeEphemeralCompiledFile($compiledCode);
                 $compiledPath = $ephemeralPath;
             }
         }
+
+        $this->lastRenderContext = [
+            'timestamp' => microtime(true),
+            'template' => $requestedTemplate !== '' ? $requestedTemplate : $templateFile,
+            'resolved_template_file' => $templateFile,
+            'compiled_path' => $compiledPath,
+            'cache_key' => $cacheKey,
+            'cache_hit' => $cacheHit,
+            'compiled_now' => $compiledNow,
+            'include_depth' => count($this->includeStack),
+            'data_keys' => array_keys($data),
+        ];
 
         try {
             return $this->evaluateCompiledFile($compiledPath, $templateFile, $data);
@@ -150,6 +374,18 @@ class TemplateEngine implements EngineInterface
 
     protected function evaluateCompiledFile(string $compiledPath, string $templateFile, array $data): string
     {
+        if (!is_file($compiledPath)) {
+            throw new RuntimeException(
+                "Compiled template file not found: {$compiledPath}",
+                $templateFile,
+                0,
+                $compiledPath,
+                'compiled_not_found',
+                null,
+                $this->lastRenderContext
+            );
+        }
+
         $__blade = [
             'include' => function ($template, array $scope = [], array $with = [], bool $required = true): string {
                 return $this->renderIncludedTemplate($template, $scope, $with, $required);
@@ -166,6 +402,9 @@ class TemplateEngine implements EngineInterface
         ];
 
         $__templateData = $data;
+        if ($this->debug && $this->exposeRenderContext) {
+            $__templateData['__engineContext'] = $this->lastRenderContext;
+        }
         extract($__templateData, EXTR_SKIP);
 
         ob_start();
@@ -180,7 +419,8 @@ class TemplateEngine implements EngineInterface
                 0,
                 '',
                 'render_error',
-                $throwable
+                $throwable,
+                $this->lastRenderContext
             );
         }
     }
@@ -242,7 +482,7 @@ class TemplateEngine implements EngineInterface
         try {
             unset($scope['__blade'], $scope['__templateData']);
             $merged = array_merge($scope, $with);
-            return $this->renderTemplateFile($file, $merged);
+            return $this->renderTemplateFile($file, $merged, $template);
         } finally {
             array_pop($this->includeStack);
         }
@@ -331,23 +571,49 @@ class TemplateEngine implements EngineInterface
     protected function buildTemplateCandidates(string $template): array
     {
         $normalized = trim(str_replace('\\', '/', $template), '/');
+        if ($normalized === '') {
+            return [];
+        }
+
         $dotNormalized = str_replace('.', '/', $normalized);
 
+        $baseCandidates = array_values(array_unique([$normalized, $dotNormalized]));
         $candidates = [];
-        foreach (array_unique([$normalized, $dotNormalized]) as $name) {
+
+        foreach ($baseCandidates as $name) {
             if ($name === '') {
                 continue;
             }
 
-            if (str_ends_with($name, '.blade.php') || str_ends_with($name, '.php')) {
+            if ($this->hasExplicitExtension($name)) {
                 $candidates[] = $name;
-            } else {
-                $candidates[] = $name . '.blade.php';
-                $candidates[] = $name . '.php';
+                continue;
+            }
+
+            foreach ($this->templateExtensions as $extension) {
+                $normalizedExtension = ltrim($extension, '.');
+                if ($normalizedExtension === '') {
+                    continue;
+                }
+                $candidates[] = $name . '.' . $normalizedExtension;
             }
         }
 
         return array_values(array_unique($candidates));
+    }
+
+    /**
+     * Verificar se o nome informado já contém extensão explícita de arquivo.
+     */
+    protected function hasExplicitExtension(string $name): bool
+    {
+        $basename = basename($name);
+
+        if ($basename === '' || str_ends_with($basename, '.')) {
+            return false;
+        }
+
+        return str_contains($basename, '.');
     }
 
     protected function isPathInsideViewPaths(string $path): bool

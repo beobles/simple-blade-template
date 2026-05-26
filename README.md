@@ -22,6 +22,8 @@ Motor de template em PHP, sem Composer e sem dependências externas.
   - cache de templates compilados
   - proteção contra include circular e profundidade excessiva
   - suporte a callbacks de autenticação/autorização/CSRF
+  - suporte a múltiplas extensões configuráveis (`.blade.php`, `.php`, `.tpl`, `.html`, etc.)
+  - contexto de renderização para troubleshooting em desenvolvimento
 
 ## Uso básico
 
@@ -38,6 +40,34 @@ echo $engine->render('pages.home', [
     'title' => 'Olá',
     'items' => [1, 2, 3],
 ]);
+```
+
+## Configuração direta (modo avançado)
+
+```php
+<?php
+
+use Core\View\Engine\EngineConfig;
+use Core\View\Engine\TemplateEngine;
+
+$config = EngineConfig::fromArray([
+    'view_paths' => [__DIR__ . '/views'],
+    'template_extensions' => ['blade.php', 'php', 'tpl', 'html'],
+    'debug' => true,
+    'expose_render_context' => true,
+    'max_include_depth' => 30,
+    'cache_enabled' => true,
+]);
+
+$engine = TemplateEngine::fromConfig($config);
+
+echo $engine->render('pages.home');     // procura pages/home.blade.php, .php, .tpl, .html...
+echo $engine->render('email/welcome.tpl'); // extensão explícita também funciona
+
+// disponível no PHP quando debug + expose_render_context estão ativos:
+// $__engineContext
+
+$lastContext = $engine->getLastRenderContext();
 ```
 
 ## Observações
