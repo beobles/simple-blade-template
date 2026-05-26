@@ -20,7 +20,7 @@ class TemplateEngine implements EngineInterface
      *
      * @var array<int, string>
      */
-    protected const RESERVED_SCOPE_KEYS = ['__blade', '__templateData', '_engineContext'];
+    protected const RESERVED_SCOPE_KEYS = ['__view', '__blade', '__templateData', '_engineContext'];
 
     protected const DEFAULT_CACHE_DIR_PREFIX = 'simple-blade-cache-';
     public const DEFAULT_TEMPLATE_EXTENSIONS = ['blade.php', 'php', 'tpl', 'html', 'htm', 'jsx', 'tsx'];
@@ -380,7 +380,7 @@ class TemplateEngine implements EngineInterface
             );
         }
 
-        $__blade = [
+        $__view = [
             'include' => function ($template, array $scope = [], array $with = [], bool $required = true): string {
                 return $this->renderIncludedTemplate($template, $scope, $with, $required);
             },
@@ -394,6 +394,7 @@ class TemplateEngine implements EngineInterface
                 return $this->resolveCan($ability, $subject);
             },
         ];
+        $__blade = $__view;
 
         $__templateData = $data;
         if ($this->debug && $this->exposeRenderContext) {

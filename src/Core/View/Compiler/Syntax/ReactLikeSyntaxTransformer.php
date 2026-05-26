@@ -71,6 +71,40 @@ class ReactLikeSyntaxTransformer
         'Raw' => 'raw',
     ];
 
+    /**
+     * @var array<string, array<int, string>>
+     */
+    protected const COMPONENT_ALLOWED_ATTRIBUTES = [
+        'If' => ['condition', 'when', 'test', 'expression', 'args'],
+        'ElseIf' => ['condition', 'when', 'test', 'expression', 'args'],
+        'Else' => [],
+        'Unless' => ['condition', 'when', 'test', 'expression', 'args'],
+        'Isset' => ['condition', 'when', 'test', 'expression', 'args'],
+        'Empty' => ['condition', 'when', 'test', 'expression', 'args'],
+        'ForEach' => ['each', 'of', 'expression', 'args'],
+        'ForElse' => ['each', 'of', 'expression', 'args'],
+        'For' => ['each', 'of', 'expression', 'args'],
+        'While' => ['condition', 'when', 'test', 'expression', 'args'],
+        'Switch' => ['on', 'value', 'expression', 'args'],
+        'Case' => ['on', 'value', 'expression', 'args'],
+        'Default' => [],
+        'Break' => ['condition', 'when', 'test', 'expression', 'args'],
+        'Continue' => ['condition', 'when', 'test', 'expression', 'args'],
+        'Include' => ['expression', 'args', 'template', 'view', 'data', 'with'],
+        'IncludeIf' => ['expression', 'args', 'template', 'view', 'data', 'with'],
+        'IncludeWhen' => ['expression', 'args', 'when', 'condition', 'template', 'view', 'data', 'with'],
+        'IncludeUnless' => ['expression', 'args', 'when', 'condition', 'template', 'view', 'data', 'with'],
+        'Json' => ['expression', 'args', 'value', 'data', 'flags', 'depth'],
+        'Csrf' => [],
+        'Auth' => [],
+        'Guest' => [],
+        'Can' => ['expression', 'args', 'ability', 'subject', 'on'],
+        'Cannot' => ['expression', 'args', 'ability', 'subject', 'on'],
+        'Php' => ['expression', 'statement', 'args'],
+        'Echo' => ['expression', 'value', 'of'],
+        'Raw' => ['expression', 'value', 'of'],
+    ];
+
     public function transform(string $content, string $templateFile = ''): string
     {
         $content = $this->transformComponentTags($content, $templateFile);
@@ -106,7 +140,14 @@ class ReactLikeSyntaxTransformer
                         );
                     }
 
-                    $attributes = $this->parseAttributes($rawAttributes);
+                    $attributesMeta = $this->parseAttributes($rawAttributes, $component, $templateFile, $line);
+                    $this->assertAllowedAndExplicitExpressionAttributes(
+                        $component,
+                        $attributesMeta,
+                        $templateFile,
+                        $line
+                    );
+                    $attributes = $this->flattenAttributeValues($attributesMeta);
                     $expression = $this->pickFirstAttribute($attributes, ['expression', 'value', 'of']);
                     if ($expression === null || trim($expression) === '') {
                         throw new SyntaxException(
@@ -133,7 +174,14 @@ class ReactLikeSyntaxTransformer
                     return '</' . self::PREFIX . $directive . '>';
                 }
 
-                $attributes = $this->parseAttributes($rawAttributes);
+                $attributesMeta = $this->parseAttributes($rawAttributes, $component, $templateFile, $line);
+                $this->assertAllowedAndExplicitExpressionAttributes(
+                    $component,
+                    $attributesMeta,
+                    $templateFile,
+                    $line
+                );
+                $attributes = $this->flattenAttributeValues($attributesMeta);
                 $isSelfClosing = str_ends_with(trim($rawAttributes), '/');
                 $expression = $this->extractDirectiveExpression($directive, $attributes);
                 $suffix = $isSelfClosing ? ' />' : '>';
@@ -170,44 +218,314 @@ class ReactLikeSyntaxTransformer
                 continue;
             }
 
-            $segments[$index] = (string) preg_replace_callback(
-                '/\{([^{}]+)\}/',
-                function (array $match): string {
-                    $expression = trim($match[1] ?? '');
-                    if ($expression === '' || !$this->isLikelyPhpExpression($expression)) {
-                        return $match[0];
-                    }
-                    return '{{ ' . $expression . ' }}';
-                },
-                $segment
-            );
+            $segments[$index] = $this->transformTextSegmentExpressions($segment);
         }
 
         return implode('', $segments);
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, array{value: string, syntax: string}>
      */
-    protected function parseAttributes(string $rawAttributes): array
+    protected function parseAttributes(string $rawAttributes, string $component, string $templateFile, int $line): array
     {
         $attributes = [];
-        preg_match_all(
-            '/([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*(\{([^}]*)\}|"([^"]*)"|\'([^\']*)\')/',
-            $rawAttributes,
-            $matches,
-            PREG_SET_ORDER
-        );
+        $length = strlen($rawAttributes);
+        $index = 0;
 
-        foreach ($matches as $match) {
-            $key = $match[1] ?? '';
-            $value = $match[3] ?? ($match[4] ?? ($match[5] ?? ''));
-            if ($key !== '') {
-                $attributes[$key] = trim((string) $value);
+        while ($index < $length) {
+            while ($index < $length && ctype_space($rawAttributes[$index])) {
+                $index++;
             }
+
+            if ($index >= $length || $rawAttributes[$index] === '/') {
+                break;
+            }
+
+            if (!preg_match('/\G([a-zA-Z_][a-zA-Z0-9_-]*)/A', $rawAttributes, $nameMatch, 0, $index)) {
+                $snippet = trim(substr($rawAttributes, $index, 40));
+                throw new SyntaxException(
+                    "Invalid attribute syntax in <{$component}>",
+                    $templateFile,
+                    $line,
+                    $snippet,
+                    'Use explicit attributes in the form key={...}'
+                );
+            }
+
+            $key = $nameMatch[1];
+            $index += strlen($key);
+
+            while ($index < $length && ctype_space($rawAttributes[$index])) {
+                $index++;
+            }
+
+            if ($index >= $length || $rawAttributes[$index] !== '=') {
+                throw new SyntaxException(
+                    "Attribute '{$key}' in <{$component}> must define a value",
+                    $templateFile,
+                    $line,
+                    $key,
+                    "Use {$key}={...}"
+                );
+            }
+
+            $index++;
+            while ($index < $length && ctype_space($rawAttributes[$index])) {
+                $index++;
+            }
+
+            if ($index >= $length) {
+                throw new SyntaxException(
+                    "Missing value for attribute '{$key}' in <{$component}>",
+                    $templateFile,
+                    $line,
+                    $key . '=',
+                    "Use {$key}={...}"
+                );
+            }
+
+            $first = $rawAttributes[$index];
+            $value = '';
+            $syntax = 'unquoted';
+
+            if ($first === '{') {
+                $syntax = 'braced';
+                $valueStart = $index + 1;
+                $depth = 1;
+                $index++;
+                $quote = null;
+                $escaped = false;
+
+                while ($index < $length) {
+                    $char = $rawAttributes[$index];
+
+                    if ($quote !== null) {
+                        if ($escaped) {
+                            $escaped = false;
+                        } elseif ($char === '\\') {
+                            $escaped = true;
+                        } elseif ($char === $quote) {
+                            $quote = null;
+                        }
+                        $index++;
+                        continue;
+                    }
+
+                    if ($char === '"' || $char === "'") {
+                        $quote = $char;
+                        $index++;
+                        continue;
+                    }
+
+                    if ($char === '{') {
+                        $depth++;
+                    } elseif ($char === '}') {
+                        $depth--;
+                        if ($depth === 0) {
+                            break;
+                        }
+                    }
+
+                    $index++;
+                }
+
+                if ($index >= $length || $depth !== 0) {
+                    throw new SyntaxException(
+                        "Unclosed expression attribute '{$key}' in <{$component}>",
+                        $templateFile,
+                        $line,
+                        "{$key}={...",
+                        "Close expression attribute with '}'"
+                    );
+                }
+
+                $value = substr($rawAttributes, $valueStart, $index - $valueStart);
+                $index++;
+            } elseif ($first === '"' || $first === "'") {
+                $quote = $first;
+                $syntax = 'quoted';
+                $index++;
+                $valueStart = $index;
+                $escaped = false;
+
+                while ($index < $length) {
+                    $char = $rawAttributes[$index];
+                    if ($escaped) {
+                        $escaped = false;
+                    } elseif ($char === '\\') {
+                        $escaped = true;
+                    } elseif ($char === $quote) {
+                        break;
+                    }
+                    $index++;
+                }
+
+                if ($index >= $length) {
+                    throw new SyntaxException(
+                        "Unclosed quoted attribute '{$key}' in <{$component}>",
+                        $templateFile,
+                        $line,
+                        "{$key}={$quote}...",
+                        "Close attribute value with {$quote}"
+                    );
+                }
+
+                $value = substr($rawAttributes, $valueStart, $index - $valueStart);
+                $index++;
+            } else {
+                $valueStart = $index;
+                while ($index < $length && !ctype_space($rawAttributes[$index]) && $rawAttributes[$index] !== '/' && $rawAttributes[$index] !== '>') {
+                    $index++;
+                }
+                $value = substr($rawAttributes, $valueStart, $index - $valueStart);
+            }
+
+            $attributes[$key] = [
+                'value' => trim((string) $value),
+                'syntax' => $syntax,
+            ];
         }
 
         return $attributes;
+    }
+
+    protected function transformTextSegmentExpressions(string $segment): string
+    {
+        $length = strlen($segment);
+        $index = 0;
+        $result = '';
+
+        while ($index < $length) {
+            if ($segment[$index] !== '{') {
+                $result .= $segment[$index];
+                $index++;
+                continue;
+            }
+
+            $start = $index;
+            $index++;
+            $depth = 1;
+            $quote = null;
+            $escaped = false;
+
+            while ($index < $length) {
+                $char = $segment[$index];
+
+                if ($quote !== null) {
+                    if ($escaped) {
+                        $escaped = false;
+                    } elseif ($char === '\\') {
+                        $escaped = true;
+                    } elseif ($char === $quote) {
+                        $quote = null;
+                    }
+                    $index++;
+                    continue;
+                }
+
+                if ($char === '"' || $char === "'") {
+                    $quote = $char;
+                    $index++;
+                    continue;
+                }
+
+                if ($char === '{') {
+                    $depth++;
+                } elseif ($char === '}') {
+                    $depth--;
+                    if ($depth === 0) {
+                        break;
+                    }
+                }
+
+                $index++;
+            }
+
+            if ($index >= $length || $depth !== 0) {
+                $result .= substr($segment, $start);
+                break;
+            }
+
+            $expression = trim(substr($segment, $start + 1, $index - $start - 1));
+            if ($expression !== '' && $this->isLikelyPhpExpression($expression)) {
+                $result .= '{{ ' . $expression . ' }}';
+            } else {
+                $result .= substr($segment, $start, $index - $start + 1);
+            }
+
+            $index++;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string, array{value: string, syntax: string}> $attributes
+     * @return array<string, string>
+     */
+    protected function flattenAttributeValues(array $attributes): array
+    {
+        $result = [];
+        foreach ($attributes as $key => $meta) {
+            $result[$key] = $meta['value'];
+        }
+        return $result;
+    }
+
+    /**
+     * @param array<string, array{value: string, syntax: string}> $attributes
+     */
+    protected function assertAllowedAndExplicitExpressionAttributes(
+        string $component,
+        array $attributes,
+        string $templateFile,
+        int $line
+    ): void {
+        $allowed = self::COMPONENT_ALLOWED_ATTRIBUTES[$component] ?? [];
+        $allowedLookup = array_flip($allowed);
+
+        foreach ($attributes as $key => $meta) {
+            if (!isset($allowedLookup[$key])) {
+                throw new SyntaxException(
+                    "Unknown attribute '{$key}' in <{$component}>",
+                    $templateFile,
+                    $line,
+                    "{$key}={$meta['value']}",
+                    'Use only supported component attributes'
+                );
+            }
+
+            if ($meta['syntax'] !== 'braced') {
+                throw new SyntaxException(
+                    "Attribute '{$key}' in <{$component}> must use expression syntax",
+                    $templateFile,
+                    $line,
+                    "{$key}={$meta['value']}",
+                    "Use {$key}={...} (for strings use {$key}={'text'})"
+                );
+            }
+
+            if (str_contains($meta['value'], '{{') || str_contains($meta['value'], '}}')) {
+                throw new SyntaxException(
+                    "Mustache syntax is not allowed in component attribute '{$key}'",
+                    $templateFile,
+                    $line,
+                    "{$key}={{...}}",
+                    "Use {$key}={...}"
+                );
+            }
+
+            if (preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$/', $meta['value']) === 1) {
+                throw new SyntaxException(
+                    "Dot notation is not valid PHP expression in attribute '{$key}'",
+                    $templateFile,
+                    $line,
+                    "{$key}={" . $meta['value'] . "}",
+                    "Use {$key}={\$object->field} or {$key}={\$array['field']}"
+                );
+            }
+        }
     }
 
     protected function extractDirectiveExpression(string $directive, array $attributes): ?string

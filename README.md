@@ -167,6 +167,21 @@ A sintaxe recomendada agora é baseada em componentes declarativos:
 <Include template={'partials.menu'} data={['current' => $current]} />
 ```
 
+### Regra profissional para atributos de componentes
+
+Para componentes React-like da engine (`<If>`, `<ForEach>`, `<Include>`, `<Echo>`, etc.), use **sempre**:
+
+- `atributo={...}` para qualquer expressão
+- inclusive string literal: `template={'partials.menu'}`
+
+Evite formatos ambíguos:
+
+- `name="user.name"`
+- `name={{ user.name }}`
+- `name="{{ user.name }}"`
+
+Isso elimina conflito com atributos HTML genéricos e deixa o parser previsível.
+
 ### Componentes suportados
 
 | Componente | Papel |

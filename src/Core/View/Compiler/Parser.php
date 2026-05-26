@@ -353,7 +353,7 @@ class Parser
 
     protected function callInternal(string $name): string
     {
-        return "\$__blade['{$name}']";
+        return "\$__view['{$name}']";
     }
 
     protected function extractCondition(string $args): string
