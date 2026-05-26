@@ -63,7 +63,7 @@ class Compiler implements CompilerInterface
         try {
             $lexer = new Lexer($content);
             $tokens = $lexer->tokenize();
-            $parser = new Parser($tokens);
+            $parser = new Parser($tokens, '');
             $parser->parse();
             return true;
         } catch (\Exception $e) {

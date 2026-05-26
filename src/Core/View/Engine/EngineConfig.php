@@ -12,6 +12,13 @@ namespace Core\View\Engine;
 class EngineConfig
 {
     /**
+     * Extensões padrão aceitas pela engine.
+     *
+     * @var array<int, string>
+     */
+    public const DEFAULT_TEMPLATE_EXTENSIONS = ['blade.php', 'php', 'tpl', 'html', 'htm'];
+
+    /**
      * @var array<int, string>
      */
     protected array $viewPaths = [];
@@ -25,7 +32,7 @@ class EngineConfig
     /**
      * @var array<int, string>
      */
-    protected array $templateExtensions = ['blade.php', 'php', 'tpl', 'html', 'htm'];
+    protected array $templateExtensions = self::DEFAULT_TEMPLATE_EXTENSIONS;
 
     /**
      * @param array<int, string> $viewPaths

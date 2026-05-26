@@ -457,7 +457,7 @@ class Parser
 
     protected function getHtmlEscapeFlagsExpression(): string
     {
-        return "ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0)";
+        return (string) (ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0));
     }
 
     protected function pushStructure(string $type, string $closing, int $line, array $meta = []): void

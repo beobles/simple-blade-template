@@ -72,7 +72,7 @@ class TemplateEngine implements EngineInterface
      *
      * @var array<int, string>
      */
-    protected array $templateExtensions = ['blade.php', 'php', 'tpl', 'html', 'htm'];
+    protected array $templateExtensions = EngineConfig::DEFAULT_TEMPLATE_EXTENSIONS;
 
     /**
      * Habilita rastreamento de contexto de renderização para desenvolvimento.
