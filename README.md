@@ -25,24 +25,30 @@ Motor de template em PHP, sem Composer e sem dependências externas.
   - suporte a múltiplas extensões configuráveis (`.blade.php`, `.php`, `.tpl`, `.html`, etc.)
   - contexto de renderização para troubleshooting em desenvolvimento
 
-## Uso básico
+## Uso básico (simples e direto)
 
 ```php
 <?php
 
-use Core\View\Engine\TemplateEngine;
+use Core\View\View;
 
-$engine = new TemplateEngine([
-    __DIR__ . '/views',
+$view = new View([
+    'paths' => [__DIR__ . '/views'],
+    'extensions' => ['blade.php', 'php', 'tpl', 'html', 'htm'],
+    'debug' => true,
+    'context' => true, // expõe $_engineContext no template em dev
 ]);
 
-echo $engine->render('pages.home', [
+echo $view->render('pages.home', [
     'title' => 'Olá',
     'items' => [1, 2, 3],
 ]);
+
+$view->share('appName', 'Simple Blade');
+$lastContext = $view->context();
 ```
 
-## Configuração direta (modo avançado)
+## Configuração avançada (controle total)
 
 ```php
 <?php
