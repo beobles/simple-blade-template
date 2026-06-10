@@ -13,12 +13,16 @@ class Parser
     protected int $position = 0;
     protected array $structureStack = [];
     protected array $customDirectives = [];
+    protected array $internalCallbacks = [];
     protected string $templateFile = '';
+    protected int $forelseEmptyMarkerCounter = 0;
+    protected int $htmlEscapeFlags = 0;
 
     public function __construct(array $tokens = [], string $templateFile = '')
     {
         $this->tokens = $tokens;
         $this->templateFile = $templateFile;
+        $this->htmlEscapeFlags = ENT_QUOTES | ENT_SUBSTITUTE | (defined('ENT_HTML5') ? ENT_HTML5 : 0);
     }
 
     /**
@@ -27,10 +31,17 @@ class Parser
     public function parse(): string
     {
         $compiled = "<?php\n";
+        $this->position = 0;
+        $this->structureStack = [];
 
         foreach ($this->tokens as $token) {
+            $this->position++;
+
             switch ($token['type']) {
                 case Lexer::TOKEN_TEXT:
+                    if ($this->shouldSkipTextToken($token['value'] ?? '')) {
+                        break;
+                    }
                     $compiled .= "echo " . var_export($token['value'], true) . ";\n";
                     break;
 
@@ -39,11 +50,10 @@ class Parser
                     break;
 
                 case Lexer::TOKEN_RAW_VARIABLE:
-                    $compiled .= "echo " . $token['value'] . ";\n";
+                    $compiled .= $this->parseRawVariable($token);
                     break;
 
                 case Lexer::TOKEN_COMMENT:
-                    // Comentários são ignorados
                     break;
 
                 case Lexer::TOKEN_DIRECTIVE:
@@ -52,16 +62,38 @@ class Parser
             }
         }
 
-        $compiled .= "\n?>";
-        return $compiled;
+        if (!empty($this->structureStack)) {
+            $open = end($this->structureStack);
+            throw new SyntaxException(
+                "Unclosed directive block: @{$open['directive']}",
+                $this->templateFile,
+                $open['line'],
+                "@{$open['directive']}",
+                "Close the block with @{$open['closing']}"
+            );
+        }
+
+        return $compiled . "\n?>";
     }
 
     /**
-     * Parsear variável
+     * Parsear variável escapada
      */
     protected function parseVariable(array $token): string
     {
-        return "echo htmlspecialchars(" . $token['value'] . ", ENT_QUOTES, 'UTF-8');\n";
+        $line = $token['line'] ?? 0;
+        $expression = $this->requireExpression($token['value'] ?? '', $line, 'variable');
+        return "echo htmlspecialchars((string)($expression), " . $this->htmlEscapeFlags . ", 'UTF-8');\n";
+    }
+
+    /**
+     * Parsear variável crua
+     */
+    protected function parseRawVariable(array $token): string
+    {
+        $line = $token['line'] ?? 0;
+        $expression = $this->requireExpression($token['value'] ?? '', $line, 'raw variable');
+        return "echo ($expression);\n";
     }
 
     /**
@@ -70,63 +102,205 @@ class Parser
     protected function parseDirective(array $token): string
     {
         $name = $token['name'];
-        $args = $token['args'];
+        $args = $token['args'] ?? '';
         $line = $token['line'] ?? 0;
 
         if (isset($this->customDirectives[$name])) {
-            return call_user_func($this->customDirectives[$name], $args, $this);
+            return (string) call_user_func($this->customDirectives[$name], $args, $this);
         }
 
         switch ($name) {
             case 'if':
-                $this->structureStack[] = 'if';
-                return "<?php if (" . $this->extractCondition($args) . "): ?>\n";
+                $this->pushStructure('if', 'endif', $line);
+                return "if (" . $this->requireExpression($this->extractCondition($args), $line, '@if') . ") {\n";
 
             case 'elseif':
-                return "<?php elseif (" . $this->extractCondition($args) . "): ?>\n";
+                $this->assertTopStructure(['if'], 'elseif', $line);
+                return "} elseif (" . $this->requireExpression($this->extractCondition($args), $line, '@elseif') . ") {\n";
 
             case 'else':
-                return "<?php else: ?>\n";
+                $this->assertTopStructure(['if', 'unless', 'isset', 'empty', 'auth', 'guest', 'can', 'cannot'], 'else', $line);
+                return "} else {\n";
 
             case 'endif':
-                if (empty($this->structureStack) || end($this->structureStack) !== 'if') {
-                    throw new SyntaxException('Unmatched @endif', $this->templateFile, $line);
+                $this->popStructure(['if'], 'endif', $line);
+                return "}\n";
+
+            case 'unless':
+                $this->pushStructure('unless', 'endunless', $line);
+                return "if (!(" . $this->requireExpression($this->extractCondition($args), $line, '@unless') . ")) {\n";
+
+            case 'endunless':
+                $this->popStructure(['unless'], 'endunless', $line);
+                return "}\n";
+
+            case 'isset':
+                $this->pushStructure('isset', 'endisset', $line);
+                return "if (isset(" . $this->requireExpression($this->extractCondition($args), $line, '@isset') . ")) {\n";
+
+            case 'endisset':
+                $this->popStructure(['isset'], 'endisset', $line);
+                return "}\n";
+
+            case 'empty':
+                if ($this->isTopStructure('forelse')) {
+                    $state = &$this->getTopStructure();
+                    if (!empty($state['meta']['empty_used'])) {
+                        throw new SyntaxException('Duplicate @empty for @forelse block', $this->templateFile, $line);
+                    }
+                    $state['meta']['empty_used'] = true;
+                    $marker = $state['meta']['marker'];
+                    return "}\nif ({$marker}) {\n";
                 }
-                array_pop($this->structureStack);
-                return "<?php endif; ?>\n";
+
+                $this->pushStructure('empty', 'endempty', $line);
+                return "if (empty(" . $this->requireExpression($this->extractCondition($args), $line, '@empty') . ")) {\n";
+
+            case 'endempty':
+                $this->popStructure(['empty'], 'endempty', $line);
+                return "}\n";
 
             case 'foreach':
-                $this->structureStack[] = 'foreach';
-                return $this->parseForEach($args);
+                $this->pushStructure('foreach', 'endforeach', $line);
+                return "foreach (" . $this->requireExpression($this->extractCondition($args), $line, '@foreach') . ") {\n";
 
             case 'endforeach':
-                if (empty($this->structureStack) || end($this->structureStack) !== 'foreach') {
-                    throw new SyntaxException('Unmatched @endforeach', $this->templateFile, $line);
+                $this->popStructure(['foreach'], 'endforeach', $line);
+                return "}\n";
+
+            case 'forelse':
+                $marker = '$templateForelseEmpty' . (++$this->forelseEmptyMarkerCounter);
+                $this->pushStructure('forelse', 'endforelse', $line, [
+                    'marker' => $marker,
+                    'empty_used' => false,
+                ]);
+                return "{$marker} = true; foreach (" . $this->requireExpression($this->extractCondition($args), $line, '@forelse') . ") { {$marker} = false;\n";
+
+            case 'endforelse':
+                $state = $this->popStructure(['forelse'], 'endforelse', $line);
+                $marker = $state['meta']['marker'];
+                if (!empty($state['meta']['empty_used'])) {
+                    return "}\nunset({$marker});\n";
                 }
-                array_pop($this->structureStack);
-                return "<?php endforeach; ?>\n";
+                return "}\nunset({$marker});\n";
 
             case 'for':
-                $this->structureStack[] = 'for';
-                return "<?php for (" . $this->extractCondition($args) . "): ?>\n";
+                $this->pushStructure('for', 'endfor', $line);
+                return "for (" . $this->requireExpression($this->extractCondition($args), $line, '@for') . ") {\n";
 
             case 'endfor':
-                if (empty($this->structureStack) || end($this->structureStack) !== 'for') {
-                    throw new SyntaxException('Unmatched @endfor', $this->templateFile, $line);
-                }
-                array_pop($this->structureStack);
-                return "<?php endfor; ?>\n";
+                $this->popStructure(['for'], 'endfor', $line);
+                return "}\n";
+
+            case 'while':
+                $this->pushStructure('while', 'endwhile', $line);
+                return "while (" . $this->requireExpression($this->extractCondition($args), $line, '@while') . ") {\n";
+
+            case 'endwhile':
+                $this->popStructure(['while'], 'endwhile', $line);
+                return "}\n";
+
+            case 'switch':
+                $this->pushStructure('switch', 'endswitch', $line, ['has_case' => false]);
+                return "switch (" . $this->requireExpression($this->extractCondition($args), $line, '@switch') . ") {\n";
+
+            case 'case':
+                $this->assertTopStructure(['switch'], 'case', $line);
+                $this->markCurrentSwitchHasCase();
+                return "case " . $this->requireExpression($this->extractCondition($args), $line, '@case') . ":\n";
+
+            case 'default':
+                $this->assertTopStructure(['switch'], 'default', $line);
+                $this->markCurrentSwitchHasCase();
+                return "default:\n";
+
+            case 'endswitch':
+                $this->popStructure(['switch'], 'endswitch', $line);
+                return "}\n";
+
+            case 'break':
+                $breakExpr = trim($this->extractCondition($args));
+                return $breakExpr !== ''
+                    ? "if ({$breakExpr}) { break; }\n"
+                    : "break;\n";
+
+            case 'continue':
+                $continueExpr = trim($this->extractCondition($args));
+                return $continueExpr !== ''
+                    ? "if ({$continueExpr}) { continue; }\n"
+                    : "continue;\n";
 
             case 'php':
-                $this->structureStack[] = 'php';
-                return "<?php\n";
+                $phpContent = trim($this->extractCondition($args));
+                if ($phpContent !== '') {
+                    return "{$phpContent};\n";
+                }
+                throw new SyntaxException(
+                    'Block-style @php ... @endphp is not supported',
+                    $this->templateFile,
+                    $line,
+                    '@php',
+                    'Use declarative syntax with inline statement: <Php expression={...} />'
+                );
 
             case 'endphp':
-                if (empty($this->structureStack) || end($this->structureStack) !== 'php') {
-                    throw new SyntaxException('Unmatched @endphp', $this->templateFile, $line);
-                }
-                array_pop($this->structureStack);
-                return "?>\n";
+                throw new SyntaxException(
+                    'Unmatched @endphp',
+                    $this->templateFile,
+                    $line,
+                    '@endphp',
+                    'Use declarative syntax with inline statement: <Php expression={...} />'
+                );
+
+            case 'include':
+                return $this->compileIncludeDirective($args, $line, true);
+
+            case 'includeIf':
+                return $this->compileIncludeDirective($args, $line, false);
+
+            case 'includeWhen':
+                return $this->compileIncludeWhenDirective($args, $line, true);
+
+            case 'includeUnless':
+                return $this->compileIncludeWhenDirective($args, $line, false);
+
+            case 'json':
+                return $this->compileJsonDirective($args, $line);
+
+            case 'csrf':
+                return "echo " . $this->callInternal('csrf') . "();\n";
+
+            case 'auth':
+                $this->pushStructure('auth', 'endauth', $line);
+                return "if (" . $this->callInternal('auth') . "()) {\n";
+
+            case 'endauth':
+                $this->popStructure(['auth'], 'endauth', $line);
+                return "}\n";
+
+            case 'guest':
+                $this->pushStructure('guest', 'endguest', $line);
+                return "if (!" . $this->callInternal('auth') . "()) {\n";
+
+            case 'endguest':
+                $this->popStructure(['guest'], 'endguest', $line);
+                return "}\n";
+
+            case 'can':
+                $this->pushStructure('can', 'endcan', $line);
+                return "if (" . $this->compileCanExpression($args, $line, true) . ") {\n";
+
+            case 'endcan':
+                $this->popStructure(['can'], 'endcan', $line);
+                return "}\n";
+
+            case 'cannot':
+                $this->pushStructure('cannot', 'endcannot', $line);
+                return "if (" . $this->compileCanExpression($args, $line, false) . ") {\n";
+
+            case 'endcannot':
+                $this->popStructure(['cannot'], 'endcannot', $line);
+                return "}\n";
 
             default:
                 throw new SyntaxException(
@@ -134,26 +308,297 @@ class Parser
                     $this->templateFile,
                     $line,
                     "@{$name}{$args}",
-                    "Check the directive name and syntax"
+                    'Check the directive name and syntax'
                 );
         }
     }
 
-    /**
-     * Parsear foreach
-     */
-    protected function parseForEach(string $args): string
+    protected function compileCanExpression(string $args, int $line, bool $allow): string
     {
-        $args = trim($args, '()');
-        return "<?php foreach (" . $args . "): ?>\n";
+        $parts = $this->splitArguments($args);
+        $ability = $this->requireExpression($parts[0] ?? '', $line, '@can');
+        $subject = isset($parts[1]) ? trim($parts[1]) : 'null';
+        $base = $this->callInternal('can') . "({$ability}, {$subject})";
+        return $allow ? $base : "!(" . $base . ")";
     }
 
-    /**
-     * Extrair condição
-     */
+    protected function compileJsonDirective(string $args, int $line): string
+    {
+        $parts = $this->splitArguments($args);
+        $value = $this->requireExpression($parts[0] ?? '', $line, '@json');
+        $flags = $this->normalizeJsonFlags(
+            trim($parts[1] ?? 'JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES'),
+            $line
+        );
+        $depth = $this->normalizeJsonDepth(trim($parts[2] ?? '512'), $line);
+        return "echo json_encode({$value}, {$flags}, {$depth});\n";
+    }
+
+    protected function compileIncludeDirective(string $args, int $line, bool $required): string
+    {
+        $parts = $this->splitArguments($args);
+        $view = $this->requireExpression($parts[0] ?? '', $line, '@include');
+        $data = trim($parts[1] ?? '[]');
+        $requiredValue = $required ? 'true' : 'false';
+        return "echo " . $this->callInternal('include') . "({$view}, get_defined_vars(), {$data}, {$requiredValue});\n";
+    }
+
+    protected function compileIncludeWhenDirective(string $args, int $line, bool $when): string
+    {
+        $parts = $this->splitArguments($args);
+        $condition = $this->requireExpression($parts[0] ?? '', $line, '@includeWhen');
+        $view = $this->requireExpression($parts[1] ?? '', $line, '@includeWhen');
+        $data = trim($parts[2] ?? '[]');
+        $requiredValue = 'true';
+        $conditionExpr = $when ? $condition : '!(' . $condition . ')';
+        return "if ({$conditionExpr}) { echo " . $this->callInternal('include') . "({$view}, get_defined_vars(), {$data}, {$requiredValue}); }\n";
+    }
+
+    protected function callInternal(string $name): string
+    {
+        return "\$__view['{$name}']";
+    }
+
     protected function extractCondition(string $args): string
     {
-        return trim($args, '()');
+        $args = trim($args);
+        if ($args === '') {
+            return '';
+        }
+
+        if ($args[0] === '(' && substr($args, -1) === ')') {
+            return trim(substr($args, 1, -1));
+        }
+
+        return $args;
+    }
+
+    protected function requireExpression(string $expression, int $line, string $context): string
+    {
+        $expression = trim($expression);
+        if ($expression === '') {
+            throw new SyntaxException(
+                "Missing expression in {$context}",
+                $this->templateFile,
+                $line
+            );
+        }
+
+        if (str_contains($expression, '<?') || str_contains($expression, '?>')) {
+            throw new SyntaxException(
+                "Invalid PHP tags inside {$context}",
+                $this->templateFile,
+                $line,
+                $expression,
+                'Remove nested PHP tags from directive expression'
+            );
+        }
+
+        return $expression;
+    }
+
+    protected function splitArguments(string $args): array
+    {
+        $condition = trim($this->extractCondition($args));
+        if ($condition === '') {
+            return [];
+        }
+
+        $arguments = [];
+        $buffer = '';
+        $depth = 0;
+        $quote = null;
+        $escaped = false;
+        $length = strlen($condition);
+
+        for ($index = 0; $index < $length; $index++) {
+            $char = $condition[$index];
+
+            if ($quote !== null) {
+                $buffer .= $char;
+                if ($escaped) {
+                    $escaped = false;
+                } elseif ($char === '\\') {
+                    $escaped = true;
+                } elseif ($char === $quote) {
+                    $quote = null;
+                }
+                continue;
+            }
+
+            if ($char === '"' || $char === "'") {
+                $quote = $char;
+                $buffer .= $char;
+                continue;
+            }
+
+            if ($char === '(' || $char === '[' || $char === '{') {
+                $depth++;
+                $buffer .= $char;
+                continue;
+            }
+
+            if ($char === ')' || $char === ']' || $char === '}') {
+                $depth = max(0, $depth - 1);
+                $buffer .= $char;
+                continue;
+            }
+
+            if ($char === ',' && $depth === 0) {
+                $arguments[] = trim($buffer);
+                $buffer = '';
+                continue;
+            }
+
+            $buffer .= $char;
+        }
+
+        if (trim($buffer) !== '') {
+            $arguments[] = trim($buffer);
+        }
+
+        return $arguments;
+    }
+
+    protected function normalizeJsonFlags(string $flags, int $line): string
+    {
+        if ($flags === '') {
+            return 'JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES';
+        }
+
+        if (preg_match('/^\d+$/', $flags) === 1) {
+            return $flags;
+        }
+
+        if (preg_match('/^[A-Z0-9_\s|()]+$/', $flags) !== 1) {
+            throw new SyntaxException(
+                'Invalid @json flags expression',
+                $this->templateFile,
+                $line,
+                $flags,
+                'Use integer flags or JSON_* constants combined with "|"'
+            );
+        }
+
+        preg_match_all('/[A-Z_][A-Z0-9_]*/', $flags, $constantMatches);
+        $constants = $constantMatches[0] ?? [];
+        foreach ($constants as $constant) {
+            if (!str_starts_with($constant, 'JSON_') || !defined($constant)) {
+                throw new SyntaxException(
+                    "Unsupported @json flag constant: {$constant}",
+                    $this->templateFile,
+                    $line,
+                    $flags,
+                    'Use only valid JSON_* flag constants'
+                );
+            }
+        }
+
+        return trim((string) preg_replace('/\s+/', ' ', $flags));
+    }
+
+    protected function normalizeJsonDepth(string $depth, int $line): string
+    {
+        if ($depth === '') {
+            return '512';
+        }
+
+        if (preg_match('/^(0|[1-9][0-9]*)$/', $depth) !== 1) {
+            throw new SyntaxException(
+                'Invalid @json depth value',
+                $this->templateFile,
+                $line,
+                $depth,
+                'Use a positive integer for depth'
+            );
+        }
+
+        return $depth;
+    }
+
+    protected function pushStructure(string $type, string $closing, int $line, array $meta = []): void
+    {
+        $this->structureStack[] = [
+            'type' => $type,
+            'directive' => $type,
+            'closing' => $closing,
+            'line' => $line,
+            'meta' => $meta,
+        ];
+    }
+
+    protected function popStructure(array $allowedTypes, string $closingDirective, int $line): array
+    {
+        if (empty($this->structureStack)) {
+            throw new SyntaxException("Unmatched @{$closingDirective}", $this->templateFile, $line);
+        }
+
+        $top = end($this->structureStack);
+        if (!in_array($top['type'], $allowedTypes, true)) {
+            throw new SyntaxException(
+                "Unexpected @{$closingDirective} for @{$top['directive']} block",
+                $this->templateFile,
+                $line
+            );
+        }
+
+        return array_pop($this->structureStack);
+    }
+
+    protected function assertTopStructure(array $allowedTypes, string $directive, int $line): void
+    {
+        if (empty($this->structureStack)) {
+            throw new SyntaxException("Unmatched @{$directive}", $this->templateFile, $line);
+        }
+
+        $top = end($this->structureStack);
+        if (!in_array($top['type'], $allowedTypes, true)) {
+            throw new SyntaxException(
+                "Directive @{$directive} is not valid inside @{$top['directive']} block",
+                $this->templateFile,
+                $line
+            );
+        }
+    }
+
+    protected function isTopStructure(string $type): bool
+    {
+        if (empty($this->structureStack)) {
+            return false;
+        }
+        return end($this->structureStack)['type'] === $type;
+    }
+
+    protected function &getTopStructure(): array
+    {
+        $index = count($this->structureStack) - 1;
+        return $this->structureStack[$index];
+    }
+
+    protected function shouldSkipTextToken(string $text): bool
+    {
+        // Em <Switch>, o parser ignora apenas whitespace antes do primeiro <Case>/<Default>
+        // para evitar geração de saída vazia inesperada no início do bloco.
+        if (!empty($this->structureStack)) {
+            $top = end($this->structureStack);
+            if ($top['type'] === 'switch' && empty($top['meta']['has_case']) && trim($text) === '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function markCurrentSwitchHasCase(): void
+    {
+        if (empty($this->structureStack)) {
+            return;
+        }
+
+        $index = count($this->structureStack) - 1;
+        if ($this->structureStack[$index]['type'] === 'switch') {
+            $this->structureStack[$index]['meta']['has_case'] = true;
+        }
     }
 
     /**
@@ -162,6 +607,15 @@ class Parser
     public function addDirective(string $name, callable $callback): self
     {
         $this->customDirectives[$name] = $callback;
+        return $this;
+    }
+
+    /**
+     * Registrar callbacks internos da engine
+     */
+    public function setInternalCallback(string $name, callable $callback): self
+    {
+        $this->internalCallbacks[$name] = $callback;
         return $this;
     }
 }
